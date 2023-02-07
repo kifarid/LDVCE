@@ -10,6 +10,7 @@ from copy import deepcopy
 from einops import rearrange
 from glob import glob
 from natsort import natsorted
+import torchvision
 from torchvision.models import resnet18
 
 from ldm.modules.diffusionmodules.openaimodel import EncoderUNetModel, UNetModel
@@ -17,7 +18,6 @@ from ldm.util import log_txt_as_img, default, ismap, instantiate_from_config
 
 __models__ = {
     'class_label': EncoderUNetModel,
-    'class_label_2': resnet18,
     'segmentation': UNetModel
 }
 
@@ -38,6 +38,7 @@ class NoisyLatentImageClassifier(pl.LightningModule):
                  label_key=None,
                  diffusion_ckpt_path=None,
                  scheduler_config=None,
+                 backbone='unet_encoder',
                  weight_decay=1.e-2,
                  log_steps=10,
                  monitor='val/loss',
@@ -45,6 +46,7 @@ class NoisyLatentImageClassifier(pl.LightningModule):
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.num_classes = num_classes
+        self.backbone = backbone
         # get latest config of diffusion model
         #diffusion_config = natsorted(glob(os.path.join(diffusion_path, 'configs', '*-project.yaml')))[-1]
         self.diffusion_config = OmegaConf.load(diffusion_path).model
@@ -120,17 +122,26 @@ class NoisyLatentImageClassifier(pl.LightningModule):
 
 
     def load_classifier(self, ckpt_path, pool):
-        model_config = deepcopy(self.diffusion_config.params.unet_config.params)
-        model_config.in_channels = self.diffusion_config.params.unet_config.params.out_channels
-        model_config.out_channels = self.num_classes
-        if self.label_key == 'class_label':
-            model_config.pool = pool
+        if self.backbone == 'unet_encoder':
+            model_config = deepcopy(self.diffusion_config.params.unet_config.params)
+            model_config.in_channels = self.diffusion_config.params.unet_config.params.out_channels
+            model_config.out_channels = self.num_classes
+            if self.label_key == 'class_label':
+                model_config.pool = pool
+            self.model =  __models__[self.label_key](**model_config)
+        #check if model is in torchvision models
+        else:
+            print("Looking for model from torchvision.models")
+            try:
+                self.model = getattr(torchvision.models, self.backbone)(pretrained=True)
+            except:
+                raise NotImplementedError(f"Model {self.backbone} not implemented")
+            try:
+                self.model.fc = Linear(self.model.fc.in_features, self.num_classes)
+            except:
+                raise NotImplementedError(f"Model {self.backbone} final layer mistmatch")
 
 
-        self.model =  __models__[self.label_key](**model_config)
-
-        self.model = resnet18(pretrained=True)
-        self.model.fc = Linear(512, self.num_classes)
         if ckpt_path is not None:
             print('#####################################################################')
             print(f'load from ckpt "{ckpt_path}"')

@@ -1,5 +1,6 @@
 import argparse, os, sys, datetime, glob, importlib, csv
 import numpy as np
+import wandb
 import time
 import torch
 import torchvision
@@ -20,6 +21,8 @@ from pytorch_lightning.utilities import rank_zero_info
 from ldm.data.base import Txt2ImgIterableBaseDataset
 from ldm.util import instantiate_from_config
 
+os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
+# does not add in case of conflict
 
 def get_parser(**parser_kwargs):
     def str2bool(v):
@@ -295,7 +298,7 @@ class ImageLogger(Callback):
         self.batch_freq = batch_frequency
         self.max_images = max_images
         self.logger_log_images = {
-            pl.loggers.CSVLogger: self._testtube,
+            pl.loggers.WandbLogger: self._testtube,
         }
         self.log_steps = [2 ** n for n in range(int(np.log2(self.batch_freq)) + 1)]
         if not increase_log_steps:
@@ -311,11 +314,14 @@ class ImageLogger(Callback):
         for k in images:
             grid = torchvision.utils.make_grid(images[k])
             grid = (grid + 1.0) / 2.0  # -1,1 -> 0,1; c,h,w
-
+            grid = grid.transpose(0, 1).transpose(1, 2).squeeze(-1)
+            grid = grid.numpy()
+            grid = (grid * 255).astype(np.uint8)
             tag = f"{split}/{k}"
-            pl_module.logger.experiment.add_image(
-                tag, grid,
-                global_step=pl_module.global_step)
+            pl_module.logger.experiment.log({tag: [wandb.Image(grid, caption="...")]})
+            # pl_module.logger.experiment.add_image(
+            #     tag, grid,
+            #     global_step=pl_module.global_step)
 
     @rank_zero_only
     def log_local(self, save_dir, split, images,
@@ -559,7 +565,7 @@ if __name__ == "__main__":
                 }
             },
         }
-        default_logger_cfg = default_logger_cfgs["testtube"]
+        default_logger_cfg = default_logger_cfgs["wandb"]
         if "logger" in lightning_config:
             logger_cfg = lightning_config.logger
         else:
@@ -606,14 +612,14 @@ if __name__ == "__main__":
                     "lightning_config": lightning_config,
                 }
             },
-            # "image_logger": {
-            #     "target": "main.ImageLogger",
-            #     "params": {
-            #         "batch_frequency": 750,
-            #         "max_images": 4,
-            #         "clamp": True
-            #     }
-            # },
+            "image_logger": {
+                "target": "main.ImageLogger",
+                "params": {
+                    "batch_frequency": 750,
+                    "max_images": 4,
+                    "clamp": True
+                }
+            },
             "learning_rate_logger": {
                 "target": "main.LearningRateMonitor",
                 "params": {
