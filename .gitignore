@@ -11,3 +11,5 @@ scripts/models/ldm/cin256-v2/model.ckpt
 __pycache__/
 __pycache__/
 ldm/models/diffusion/__pycache__/
+src/clipseg
+src/taming-transformers
