@@ -9,6 +9,7 @@ latent_diffusion.egg-info
 cdiff copy*
 
 scripts/models/ldm/cin256-v2/model.ckpt
+models/ldm/cin256-v2
 models/ldm/cin256-v2/model.ckpt
 __pycache__/
 __pycache__/
