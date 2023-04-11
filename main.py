@@ -386,7 +386,7 @@ class ImageLogger(Callback):
             return True
         return False
 
-    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, *args, **kwargs):
         if not self.disabled and (pl_module.global_step > 0 or self.log_first_step):
             #pass
             self.log_img(pl_module, batch, batch_idx, split="train")
@@ -527,6 +527,7 @@ if __name__ == "__main__":
         trainer_config = lightning_config.get("trainer", OmegaConf.create())
         # default to ddp
         trainer_config["accelerator"] = "gpu"  # "ddp"
+        trainer_config["strategy"] = "ddp"
         for k in nondefault_trainer_args(opt):
             trainer_config[k] = getattr(opt, k)
         if not "devices" in trainer_config:
@@ -627,9 +628,9 @@ if __name__ == "__main__":
                     # "log_momentum": True
                 }
             },
-            "cuda_callback": {
-                "target": "main.CUDACallback"
-            },
+            #"cuda_callback": {
+            #    "target": "main.CUDACallback"
+            #},
         }
         if version.parse(pl.__version__) >= version.parse('1.4.0'):
             default_callbacks_cfg.update({'checkpoint_callback': modelckpt_cfg})
@@ -682,7 +683,7 @@ if __name__ == "__main__":
         # configure learning rate
         bs, base_lr = config.data.params.batch_size, config.model.base_learning_rate
         if not cpu:
-            ngpu = len(lightning_config.trainer.gpus.strip(",").split(','))
+            ngpu = len(lightning_config.trainer.devices.strip(",").split(','))
         else:
             ngpu = 1
         if 'accumulate_grad_batches' in lightning_config.trainer:

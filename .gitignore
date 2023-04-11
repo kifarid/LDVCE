@@ -1,0 +1,13 @@
+data/
+logs/
+results/
+outputs/
+.vscode/
+ldm/__
+latent_diffusion.egg-info
+cdiff copy*
+
+scripts/models/ldm/cin256-v2/model.ckpt
+__pycache__/
+__pycache__/
+ldm/models/diffusion/__pycache__/
