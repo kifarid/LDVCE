@@ -145,7 +145,6 @@ class NoisyLatentImageClassifier(pl.LightningModule):
         if len(unexpected) > 0:
             print(f"Unexpected Keys: {unexpected}")
 
-
     def load_diffusion(self):
         model = instantiate_from_config(self.diffusion_config)
         self.diffusion_model = model.eval()

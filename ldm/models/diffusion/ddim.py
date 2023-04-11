@@ -17,9 +17,9 @@ class DDIMSampler(object):
         self.schedule = schedule
 
     def register_buffer(self, name, attr):
-        # if type(attr) == torch.Tensor:
-        #     if attr.device != torch.device("cuda"):
-        #         attr = attr.to(torch.device("cuda"))
+        if type(attr) == torch.Tensor:
+            if attr.device != torch.device("cuda"):
+                attr = attr.to(torch.device("cuda"))
         setattr(self, name, attr)
 
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):
@@ -230,15 +230,6 @@ class DDIMSampler(object):
         total_steps = timesteps.shape[0]
         print(f"Running DDIM Sampling with {total_steps} timesteps")
 
-        iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
-        x_dec = x_latent
-        for i, step in enumerate(iterator):
-            index = total_steps - i - 1
-            ts = torch.full((x_latent.shape[0],), step, device=x_latent.device, dtype=torch.long)
-            x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
-                                          unconditional_guidance_scale=unconditional_guidance_scale,
-                                          unconditional_conditioning=unconditional_conditioning)
-        return x_dec
         iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
         x_dec = x_latent
         for i, step in enumerate(iterator):
