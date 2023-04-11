@@ -15,5 +15,4 @@ __pycache__/
 __pycache__/
 ldm/models/diffusion/__pycache__/
 
-src/clipseg
-src/taming-transformers
+src/
