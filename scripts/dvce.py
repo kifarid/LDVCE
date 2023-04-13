@@ -56,13 +56,12 @@ classifier_model = classifier_model.eval()
 classifier_model.train = disabled_train
 
 torch.autograd.set_detect_anomaly(True)
-ddim_steps = 250
+ddim_steps = 500
 ddim_eta = 0.0
 scale = 3.0   # for unconditional guidance
 
 
-strength = 0.4#0.28#48#46#"strength for noising/unnoising. 1.0 corresponds to full destruction of information in init image"
-ddim_steps = 250
+strength = 0.3#0.28#48#46#"strength for noising/unnoising. 1.0 corresponds to full destruction of information in init image"
 sampler = CCDDIMSampler(model, classifier_model)
 sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
@@ -70,15 +69,15 @@ assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
 t_enc = int(strength * ddim_steps)
 precision = "autocast" #"full"
 precision_scope = autocast if precision == "autocast" else nullcontext
-n_samples_per_class = 3
+n_samples_per_class = 1
 
 sampler.enforce_same_norms = True
 sampler.guidance = "projected"
-sampler.classifier_lambda = 1 #.2 #1.8 #2 final #1.5 #2.5 # 5.5 best
-sampler.dist_lambda = 1 # 0.15
+sampler.classifier_lambda = 2 #.2 #1.8 #2 final #1.5 #2.5 # 5.5 best
+sampler.dist_lambda = 0.6 # 0.15
 sampler.masked_dist = False
 sampler.masked_guidance = False
-sampler.backprop_diffusion = False
+sampler.backprop_diffusion = True
 #sampler.seg_model = model_seg
 
 sampler.lp_custom = 1
@@ -120,7 +119,8 @@ with open('data/synset_closest_idx.yaml', 'r') as file:
 
 
 my_table = wandb.Table(columns = ["image", "source", "target", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "closness_1", "closness_2", "video"])
-for i, sample in enumerate(dataset, 14655):
+
+for i, sample in enumerate(dataset, 0):
     image, label = dataset[i]
     tgt_classes = synset_closest_idx[label]
     print(f"converting {i} from : {i2h[label]} to: {[i2h[tgt_class] for tgt_class in tgt_classes]}")
@@ -141,28 +141,29 @@ for i, sample in enumerate(dataset, 14655):
     all_probs = out["probs"]
 
     # Loop through your data and update the table incrementally
-    for i in range(len(all_probs)):
+    for j in range(len(all_probs)):
         # Generate data for the current row
-        src_image = all_samples[i][0]
+        src_image = all_samples[j][0]
         src_image = wandb.Image(src_image)
         # my_table.update_column("image", [wandb.Image(src_image)], row_idx=i)
         gen_images = []
-        for j in range(n_samples_per_class):
-            gen_image = all_samples[i][j + 1]
+        for k in range(n_samples_per_class):
+            gen_image = all_samples[j][k + 1]
             gen_images.append(wandb.Image(gen_image))
             # my_table.update_column(f"gen_image_{j}", [wandb.Image(gen_image)], row_idx=i)
 
-        class_prediction = all_probs[i]
+        class_prediction = all_probs[j]
         source = i2h[label]
-        target = i2h[tgt_classes[i]]
+        target = i2h[tgt_classes[j]]
 
-        diff = 255. * (init_image - all_samples[i][1:]).permute(0, 2, 3, 1).detach().cpu().numpy()
+        diff = 255. * (init_image - all_samples[j][1:]).permute(0, 2, 3, 1).detach().cpu().numpy()
         closeness_2 = int(np.linalg.norm(diff.astype(np.uint8), axis=-1).mean())
         closeness_1 = int(np.abs(diff).sum(axis=-1).mean())
 
-        video = wandb.Video((255. * all_videos[i]).to(torch.uint8), fps=4, format="gif")
+        video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=4, format="gif")
         my_table.add_data(src_image, source, target, *gen_images, class_prediction, closeness_1, closeness_2, video)
-
+        
+    if i %5 == 0:
         run.log({"dvce_video": my_table})
 
 run.log({"dvce_video_complete": my_table})
