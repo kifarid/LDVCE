@@ -23,7 +23,7 @@ with open('data/imagenet_clsidx_to_label.txt', "r") as f:
 
 class CCDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
-                 deg_cone_projection=10, denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
+                 deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, masked_guidance=False, masked_dist=False,
                  backprop_diffusion=True, **kwargs):
 
