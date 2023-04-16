@@ -1,5 +1,6 @@
 wandb/
-data/
+data/imagenette2
+
 logs/
 results/
 outputs/

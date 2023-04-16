@@ -25,7 +25,7 @@ from sampling_helpers import disabled_train, get_model, _unmap_img, generate_sam
 import sys
 import regex as re
 from ldm import *
-from ldm.models.diffusion.cc_ddim import CCDDIMSampler, CCMDDIMSampler
+from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
@@ -54,9 +54,11 @@ def main(cfg : DictConfig) -> None:
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"using device: {device}")
 
-    model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
-    model_seg.eval()
-    model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
+    if cfg.seg_model is not None:
+        print("### Loading segmentation model ###")
+        model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
+        model_seg.eval()
+        model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device)
     classifier_name = "efficientnet_b0"
@@ -69,7 +71,7 @@ def main(cfg : DictConfig) -> None:
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance
     strength = cfg.strength #for unconditional guidance
-    sampler = CCMDDIMSampler(model, classifier_model, seg_model=model_seg, **cfg.sampler)
+    sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg if cfg.seg_model is not None else None, **cfg.sampler)
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
@@ -112,7 +114,7 @@ def main(cfg : DictConfig) -> None:
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
         out = generate_samples(model, sampler, tgt_classes, n_samples_per_class, ddim_steps, scale, init_latent=init_latent.to(device),
-                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.latent_t_0)
+                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
 
         all_samples = out["samples"]
         all_videos = out["videos"]
@@ -142,10 +144,10 @@ def main(cfg : DictConfig) -> None:
             #print("added data to table")
             my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video)
 
-        if i % 10 == 0:
-            print(f"logging {i} with {len(my_table.data)} rows")
-            table_name = f"dvce_video" #_{i}"
-            run.log({table_name: copy.deepcopy(my_table)})
+        #if i % 10 == 0:
+        print(f"logging {i} with {len(my_table.data)} rows")
+        table_name = f"dvce_video" #_{i}"
+        run.log({table_name: copy.deepcopy(my_table)})
 
     #wandb.log({"dvce_video_complete": my_table})
     return None

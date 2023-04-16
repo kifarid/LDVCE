@@ -937,7 +937,7 @@ class CCMDDIMSampler(object):
 
     @torch.no_grad()
     def decode(self, x_latent, cond, t_start, y=None, unconditional_guidance_scale=1.0, unconditional_conditioning=None,
-               use_original_steps=False, latent_t_0=True):
+               use_original_steps=False, latent_t_0=False):
 
         timesteps = np.arange(self.ddpm_num_timesteps) if use_original_steps else self.ddim_timesteps
         timesteps = timesteps[:t_start]
@@ -947,6 +947,7 @@ class CCMDDIMSampler(object):
         print(f"Running DDIM Sampling with {total_steps} timesteps")
 
         if self.masked_guidance:
+            print("### Using masked guidance ###")
             mask = self.get_mask()
             mask = F.interpolate(mask, size=x_latent.shape[-2:], mode='bilinear', align_corners=True)
 
@@ -955,7 +956,7 @@ class CCMDDIMSampler(object):
         if latent_t_0:
             x_orig = x_latent
             x_dec = self.stochastic_encode(x_latent.clone(),
-                                           torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device()))
+                                           torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device))
         else:
             x_dec = x_latent
 
@@ -967,7 +968,8 @@ class CCMDDIMSampler(object):
                                           unconditional_conditioning=unconditional_conditioning, y=y)
             if self.masked_guidance and latent_t_0:
                 x_orig_diffused = self.stochastic_encode(x_orig.clone(), torch.tensor([index] * (x_latent.shape[0])).to(
-                    x_latent.device()))
+                    x_latent.device))
+
                 x_dec = x_dec * mask + x_orig_diffused * (1 - mask)
 
         out = {}
@@ -977,4 +979,6 @@ class CCMDDIMSampler(object):
         out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
         self.images = []
         self.probs = []
+        self.mask = None
+        
         return out
