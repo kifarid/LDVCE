@@ -16,3 +16,4 @@ __pycache__/
 ldm/models/diffusion/__pycache__/
 
 src/
+src/clipseg

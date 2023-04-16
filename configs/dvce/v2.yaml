@@ -12,7 +12,7 @@ classifier_model:
   name: "efficientnet_b0"
 
 n_samples_per_class: 2
-strength: 0.33
+strength: 0.27
 scale: 3.0
 ddim_steps: 500
 ddim_eta: 0.
@@ -21,8 +21,8 @@ sampler:
 
   enforce_same_norms: True
   guidance: "projected"
-  classifier_lambda: 1.6
-  dist_lambda: 0.6
+  classifier_lambda: 1.8
+  dist_lambda: 0.3
   masked_dist: False
-  backprop_diffusion: True
+  backprop_diffusion: False
   lp_custom: 1

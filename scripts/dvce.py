@@ -1,6 +1,7 @@
 import argparse
 import os
 import yaml
+import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,10 +29,10 @@ from ldm.models.diffusion.cc_ddim import CCDDIMSampler
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
-
 os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
-run = wandb.init(entity="kifarid", project="cdiff")
-device = "cuda:1" if torch.cuda.is_available() else "cpu"
+os.environ['WANDB_DIR'] = "/misc/lmbraid21/faridk/.wandb"
+os.environ['WANDB_DATA_DIR'] = "/misc/lmbraid21/faridk/"
+os.environ['WANDB_CACHE_DIR'] = "/misc/lmbraid21/faridk/.cache/wandb"
 
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
@@ -43,13 +44,19 @@ with open('data/imagenet_clsidx_to_label.txt', "r") as f:
             i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip()) #value.strip().strip("'").strip(",").strip("\"")
 
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v1")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v3")
 def main(cfg : DictConfig) -> None:
     # load model
-    model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=int(cfg.seg_model.version.split('/')[-1]))
-    model_seg.eval();
-    model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False);
+    config = {}
+    config.update(OmegaConf.to_container(cfg, resolve=True))
 
+    run = wandb.init(entity="kifarid", project="cdiff", dir = "/misc/lmbraid21/faridk", config=config)
+    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    print(f"using device: {device}")
+
+    model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=int(cfg.seg_model.version.split('/')[-1]))
+    model_seg.eval()
+    model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False);
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device)
     classifier_name = "efficientnet_b0"
@@ -71,24 +78,8 @@ def main(cfg : DictConfig) -> None:
     n_samples_per_class = cfg.n_samples_per_class
     #precision = "autocast" #"full"
     #precision_scope = autocast if precision == "autocast" else nullcontext
-
-    # n_samples_per_class = 3
-    #
-    # sampler.enforce_same_norms = True
-    # sampler.guidance = "projected"
-    # sampler.classifier_lambda = 1 #.2 #1.8 #2 final #1.5 #2.5 # 5.5 best
-    # sampler.dist_lambda = 1 # 0.15
-    # sampler.masked_dist = False
-    # sampler.masked_guidance = False
-    # sampler.backprop_diffusion = False
-    # #sampler.seg_model = model_seg
-    #
-    # sampler.lp_custom = 1
-
-    #log config
-    config = run.config
-    for k, v in cfg.items():
-        config[k] = v
+      
+    print(config)
 
     data_path = cfg.data_path
     out_size = 256
@@ -98,26 +89,31 @@ def main(cfg : DictConfig) -> None:
     ]
     transform = transforms.Compose(transform_list)
     dataset = datasets.ImageFolder(data_path,  transform=transform)
+    print("dataset length: ", len(dataset))
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
+        
+    my_table = wandb.Table(columns = ["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video"])
+    
+    #for i, sample in enumerate(dataset, 1000):
+    #    image, label = dataset[i]
+    for i, batch in enumerate(data_loader):
+        image, label = batch
+        image = image.squeeze().to(device)
+        label = label.squeeze().to(device).item()
 
-
-    my_table = wandb.Table(columns = ["image", "source", "target", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "closness_1", "closness_2", "video"])
-    for i, sample in enumerate(dataset, 14653):
-        image, label = dataset[i]
         tgt_classes = synset_closest_idx[label]
         print(f"converting {i} from : {i2h[label]} to: {[i2h[tgt_class] for tgt_class in tgt_classes]}")
         init_image = image.repeat(n_samples_per_class, 1, 1, 1).to(device)
-        plt.imshow(init_image[0].permute(1, 2, 0).detach().cpu().numpy())
-        plt.show()
-        sampler.init_images = init_image
+        sampler.init_images = init_image.to(device)
         sampler.init_labels = n_samples_per_class * [label]
         mapped_image = _unmap_img(init_image)
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
-        out = generate_samples(model, sampler, tgt_classes, n_samples_per_class, ddim_steps, scale, init_latent=init_latent,
-                               t_enc=t_enc, init_image=init_image, ccdddim=True)
+        out = generate_samples(model, sampler, tgt_classes, n_samples_per_class, ddim_steps, scale, init_latent=init_latent.to(device),
+                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True)
 
         all_samples = out["samples"]
         all_videos = out["videos"]
@@ -126,30 +122,33 @@ def main(cfg : DictConfig) -> None:
         # Loop through your data and update the table incrementally
         for j in range(len(all_probs)):
             # Generate data for the current row
-            src_image = all_samples[j][0]
+            src_image = copy.deepcopy(all_samples[j][0])
             src_image = wandb.Image(src_image)
-            # my_table.update_column("image", [wandb.Image(src_image)], row_idx=i)
             gen_images = []
             for k in range(n_samples_per_class):
-                gen_image = all_samples[j][k + 1]
+                gen_image = copy.deepcopy(all_samples[j][k + 1])
                 gen_images.append(wandb.Image(gen_image))
-                # my_table.update_column(f"gen_image_{j}", [wandb.Image(gen_image)], row_idx=i)
-
-            class_prediction = all_probs[j]
+                
+            class_prediction = copy.deepcopy(all_probs[j])
             source = i2h[label]
             target = i2h[tgt_classes[j]]
 
-            diff = 255. * (init_image - all_samples[j][1:]).permute(0, 2, 3, 1).detach().cpu().numpy()
-            closeness_2 = int(np.linalg.norm(diff.astype(np.uint8), axis=-1).mean())
-            closeness_1 = int(np.abs(diff).sum(axis=-1).mean())
+            diff =  (init_image - all_samples[j][1:])
+            diff = diff.view(diff.shape[0], -1)
+            lp1 = int(torch.norm(diff, p=1, dim=-1).mean().cpu().numpy())
+            lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
+            #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=4, format="gif")
-            my_table.add_data(src_image, source, target, *gen_images, class_prediction, closeness_1, closeness_2, video)
+            video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=10, format="gif")
+            #print("added data to table")
+            #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video)
 
-        if i % 5 == 0:
-            run.log({"dvce_video": my_table})
+        if i % 10 == 0:
+            print(f"logging {i} with {len(my_table.data)} rows")
+            table_name = f"dvce_video" #_{i}"
+            run.log({table_name: copy.deepcopy(my_table)})
 
-    run.log({"dvce_video_complete": my_table})
+    #wandb.log({"dvce_video_complete": my_table})
     return None
 
 if __name__ == "__main__":
