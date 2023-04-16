@@ -497,7 +497,7 @@ class CCDDIMSampler(object):
         out = {}
         out['x_dec'] = x_dec
         out['video'] = torch.stack(self.images, dim=0) if len(self.images) != 0 else None
-        print(f"Video shape: {out['video'].shape}")
+        #print(f"Video shape: {out['video'].shape}")
         out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
         self.images = []
         self.probs = []
