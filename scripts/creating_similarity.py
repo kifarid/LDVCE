@@ -1,3 +1,11 @@
+import yaml 
+import nltk
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+from collections import defaultdict
+from nltk.corpus import wordnet as wn
+
+
 with open("data/imagenette2/synset_human.txt", "r") as f:    
     synset_human = f.read().splitlines()
     synset_human = dict(line.split(maxsplit=1) for line in synset_human)
@@ -20,16 +28,8 @@ def get_sim_synset(synset_id_1, synset_id_2):
     synset_2 = wn.synset_from_pos_and_offset(synset_id_2[0], int(synset_id_2[1:]))
 
     # Calculate the Wu-Palmer Similarity score
-    similarity_score = synset_1.wup_similarity(synset_2)
+    similarity_score = synset_1.path_similarity(synset_2)
     return similarity_score
-
-import nltk
-
-nltk.download('wordnet')
-
-nltk.download('omw-1.4')
-
-from collections import defaultdict
 
 #get the closest two words for each synset
 synset_closest_syn = defaultdict(list)
@@ -50,6 +50,7 @@ for k, v in index_synset.items():
     closest_keys = [x[0] for x in similarity_scores[:2]]
     synset_closest_syn[v] = closest_keys
     synset_closest_idx[k] = [synset_index[x] for x in closest_keys]
+    print(k, [synset_index[x] for x in closest_keys])
     #break 
 
 #save synset_closest_syn and synset_closest_idx to yaml file

@@ -16,6 +16,7 @@ strength: 0.27
 scale: 3.0
 ddim_steps: 500
 ddim_eta: 0.
+latent_t_0: True
 
 sampler:
 
@@ -23,6 +24,6 @@ sampler:
   guidance: "projected"
   classifier_lambda: 1.8
   dist_lambda: 0.3
-  masked_guidance: False
+  masked_guidance: True
   backprop_diffusion: False
   lp_custom: 1
