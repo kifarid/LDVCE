@@ -172,7 +172,7 @@ def disabled_train(self, mode=True):
 
 
 def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, scale, init_image=None, t_enc=None,
-                     init_latent=None, ccdddim=False, ddim_eta=0.):
+                     init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True):
     all_samples = []
     all_probs = []
     all_videos = []
@@ -189,13 +189,13 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                 xc = torch.tensor(n_samples_per_class * [class_label])
                 c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
                 if init_latent is not None:
-                    y = xc.to(model.device)
-                    z_enc = sampler.stochastic_encode(init_latent,
-                                                      torch.tensor([t_enc] * (n_samples_per_class)).to(model.device))
+                    z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (n_samples_per_class)).to(
+                        init_latent.device())) if not latent_t_0 else init_latent
+
                     # decode it
                     if ccdddim:
                         out = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
-                                             unconditional_conditioning=uc, y=xc.to(model.device))
+                                             unconditional_conditioning=uc, y=xc.to(model.device), latent_t_0=latent_t_0)
                         samples = out["x_dec"]
                         prob = out["prob"]
                         vid = out["video"]
@@ -227,6 +227,8 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                 all_samples.append(cat_samples)
                 all_probs.append(prob) if ccdddim and prob is not None else None
                 all_videos.append(vid) if ccdddim and vid is not None else None
+            tac = time.time()
+
 
     out = {}
     out["samples"] = all_samples

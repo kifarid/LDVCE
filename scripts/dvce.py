@@ -25,7 +25,7 @@ from sampling_helpers import disabled_train, get_model, _unmap_img, generate_sam
 import sys
 import regex as re
 from ldm import *
-from ldm.models.diffusion.cc_ddim import CCDDIMSampler
+from ldm.models.diffusion.cc_ddim import CCDDIMSampler, CCMDDIMSampler
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
@@ -54,23 +54,22 @@ def main(cfg : DictConfig) -> None:
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"using device: {device}")
 
-    model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=int(cfg.seg_model.version.split('/')[-1]))
+    model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
     model_seg.eval()
-    model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False);
+    model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device)
     classifier_name = "efficientnet_b0"
-    classifier_model=getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
+    classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
 
     torch.autograd.set_detect_anomaly(True)
     ddim_steps = cfg.ddim_steps
     ddim_eta = cfg.ddim_eta
-    scale = cfg.scale # for unconditional guidance
-    strength = cfg.strength # for unconditional guidance
-
-    sampler = CCDDIMSampler(model, classifier_model, **cfg.sampler)
+    scale = cfg.scale #for unconditional guidance
+    strength = cfg.strength #for unconditional guidance
+    sampler = CCMDDIMSampler(model, classifier_model, seg_model=model_seg, **cfg.sampler)
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
@@ -84,7 +83,7 @@ def main(cfg : DictConfig) -> None:
     data_path = cfg.data_path
     out_size = 256
     transform_list = [
-        transforms.Resize((out_size,out_size)),
+        transforms.Resize((out_size, out_size)),
         transforms.ToTensor()
     ]
     transform = transforms.Compose(transform_list)
@@ -94,7 +93,7 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
         
-    my_table = wandb.Table(columns = ["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video"])
+    my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video"])
     
     #for i, sample in enumerate(dataset, 1000):
     #    image, label = dataset[i]
@@ -113,7 +112,7 @@ def main(cfg : DictConfig) -> None:
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
         out = generate_samples(model, sampler, tgt_classes, n_samples_per_class, ddim_steps, scale, init_latent=init_latent.to(device),
-                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True)
+                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.latent_t_0)
 
         all_samples = out["samples"]
         all_videos = out["videos"]
@@ -141,7 +140,7 @@ def main(cfg : DictConfig) -> None:
 
             video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=10, format="gif")
             #print("added data to table")
-            #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video)
+            my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video)
 
         if i % 10 == 0:
             print(f"logging {i} with {len(my_table.data)} rows")

@@ -6,7 +6,7 @@ diffusion_model:
 
 seg_model:
   version: 'ViT-B/16'
-  path: 'src/clipseg/weights/rd16-uni.pth'
+  path: 'src/clipseg/weights/rd64-uni.pth'
 
 classifier_model:
   name: "efficientnet_b0"
@@ -16,12 +16,13 @@ strength: 0.27 #0.25
 scale: 2.85
 ddim_steps: 500
 ddim_eta: 0.
+latent_t_0: True
 
 sampler:
   enforce_same_norms: True
   guidance: "projected"
   classifier_lambda: 1.8
   dist_lambda: 0.3
-  masked_dist: False
+  mask_guidance: True
   backprop_diffusion: True   
   lp_custom: 1
