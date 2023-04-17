@@ -176,6 +176,7 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
     all_samples = []
     all_probs = []
     all_videos = []
+    all_masks = []
 
     with torch.no_grad():
         with model.ema_scope():
@@ -190,7 +191,7 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                 c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
                 if init_latent is not None:
                     z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (n_samples_per_class)).to(
-                        init_latent.device())) if not latent_t_0 else init_latent
+                        init_latent.device)) if not latent_t_0 else init_latent
 
                     # decode it
                     if ccdddim:
@@ -199,6 +200,7 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                         samples = out["x_dec"]
                         prob = out["prob"]
                         vid = out["video"]
+                        mask = out["mask"]
 
                     else:
                         samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
@@ -227,6 +229,7 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                 all_samples.append(cat_samples)
                 all_probs.append(prob) if ccdddim and prob is not None else None
                 all_videos.append(vid) if ccdddim and vid is not None else None
+                all_masks.append(mask) if ccdddim and mask is not None else None
             tac = time.time()
 
 
@@ -234,4 +237,6 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
     out["samples"] = all_samples
     out["probs"] = all_probs if len(all_probs) > 0 else None
     out["videos"] = all_videos if len(all_videos) > 0 else None
+    out["masks"] = all_masks if len(all_masks) > 0 else None
+    
     return out

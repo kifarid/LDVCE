@@ -71,7 +71,7 @@ def main(cfg : DictConfig) -> None:
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance
     strength = cfg.strength #for unconditional guidance
-    sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg if cfg.seg_model is not None else None, **cfg.sampler)
+    sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg.to(device) if cfg.seg_model is not None else None, **cfg.sampler)
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
@@ -95,7 +95,7 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
         
-    my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video"])
+    my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video", "mask"])
     
     #for i, sample in enumerate(dataset, 1000):
     #    image, label = dataset[i]
@@ -117,8 +117,9 @@ def main(cfg : DictConfig) -> None:
                                t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
 
         all_samples = out["samples"]
-        all_videos = out["videos"]
+        all_videos = out["videos"] 
         all_probs = out["probs"]
+        all_masks = out["masks"] 
 
         # Loop through your data and update the table incrementally
         for j in range(len(all_probs)):
@@ -141,13 +142,14 @@ def main(cfg : DictConfig) -> None:
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
             video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=10, format="gif")
+            mask = wandb.Image(all_masks[j]) if all_masks is not None else None
             #print("added data to table")
-            my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video)
+            my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
 
-        #if i % 10 == 0:
-        print(f"logging {i} with {len(my_table.data)} rows")
-        table_name = f"dvce_video" #_{i}"
-        run.log({table_name: copy.deepcopy(my_table)})
+        if i % 2 == 0:
+            print(f"logging {i} with {len(my_table.data)} rows")
+            table_name = f"dvce_video" #_{i}"
+            run.log({table_name: copy.deepcopy(my_table)})
 
     #wandb.log({"dvce_video_complete": my_table})
     return None

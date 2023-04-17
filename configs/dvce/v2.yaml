@@ -5,8 +5,7 @@ diffusion_model:
   ckpt_path: "models/ldm/cin256-v2/model.ckpt"
 
 seg_model:
-  version: 'ViT-B/16'
-  path: 'src/clipseg/weights/rd64-uni.pth'
+
 
 classifier_model:
   name: "efficientnet_b0"
