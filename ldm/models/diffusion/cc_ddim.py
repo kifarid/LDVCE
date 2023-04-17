@@ -25,7 +25,7 @@ class CCDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, masked_guidance=False, masked_dist=False,
-                 backprop_diffusion=True, **kwargs):
+                 backprop_diffusion=True, mask_alpha = 3., **kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -47,6 +47,7 @@ class CCDDIMSampler(object):
         self.seg_model = seg_model
         self.masked_dist = masked_dist
         self.masked_guidance = masked_guidance
+        self.mask_alpha = mask_alpha
 
         self.init_images = None
         self.init_labels = None
@@ -83,6 +84,9 @@ class CCDDIMSampler(object):
             preds = F.interpolate(preds, size=self.init_images.shape[-2:], mode='bilinear', align_corners=False)
             preds = torch.sigmoid(preds)  # torch.softmax(preds.view(preds.shape[0], -1), dim=1).view(*preds.shape)
             # penalty = 1-preds
+            #preds = (preds - preds.min()) / (preds.max() - preds.min())
+            preds = (preds - preds.min()) / (preds.max() - preds.min())
+            preds = torch.sigmoid(self.mask_alpha*2*(preds-0.5))
 
         return preds.to(self.init_images.device)
 
@@ -508,7 +512,7 @@ class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, masked_guidance=False,
-                 backprop_diffusion=True, **kwargs):
+                 backprop_diffusion=True, mask_alpha = 5., **kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -529,9 +533,11 @@ class CCMDDIMSampler(object):
         self.enforce_same_norms = enforce_same_norms
         self.seg_model = seg_model
         self.masked_guidance = masked_guidance
+        self.mask_alpha = mask_alpha
 
         self.init_images = None
         self.init_labels = None
+        self.mask = None
 
     def get_classifier_dist(self, x, t=None):
         """
@@ -565,6 +571,8 @@ class CCMDDIMSampler(object):
             preds = F.interpolate(preds, size=self.init_images.shape[-2:], mode='bilinear', align_corners=False)
             preds = torch.sigmoid(preds)  # torch.softmax(preds.view(preds.shape[0], -1), dim=1).view(*preds.shape)
             # penalty = 1-preds
+            preds = (preds - preds.min()) / (preds.max() - preds.min())
+            preds = torch.sigmoid(self.mask_alpha*2*(preds-0.5))
         self.mask = preds.to(self.init_images.device)
         return self.mask
 
@@ -947,34 +955,39 @@ class CCMDDIMSampler(object):
         print(f"Running DDIM Sampling with {total_steps} timesteps")
 
         if self.masked_guidance:
-            print("### Using masked guidance ###")
+            print("### Getting the mask ###")
             mask = self.get_mask()
             mask = F.interpolate(mask, size=x_latent.shape[-2:], mode='bilinear', align_corners=True)
+            mask = (mask - mask.min()) / (mask.max() - mask.min())
+            mask[mask < 0.5] = 0.
+            mask[mask >= 0.5] = 1.
 
         iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
 
-        if latent_t_0:
-            x_orig = x_latent
-            x_dec = self.stochastic_encode(x_latent.clone(),
-                                           torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device))
-        else:
-            x_dec = x_latent
-
+        # if latent_t_0:
+        #     x_orig = x_latent
+        #     x_dec = self.stochastic_encode(x_latent.clone(),
+        #                                    torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device))
+        # else:
+        x_dec = x_latent if not latent_t_0 else self.stochastic_encode(x_latent.clone(), torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device))
         for i, step in enumerate(iterator):
             index = total_steps - i - 1
             ts = torch.full((x_latent.shape[0],), step, device=x_latent.device, dtype=torch.long)
+
+            if self.masked_guidance and latent_t_0:
+                #print("blending with original image")
+                img_orig = self.model.q_sample(x_latent.clone(), ts)
+                x_dec = img_orig * (1. - mask) + (mask) * x_dec
+
+            
             x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
                                           unconditional_guidance_scale=unconditional_guidance_scale,
                                           unconditional_conditioning=unconditional_conditioning, y=y)
-            if self.masked_guidance and latent_t_0:
-                x_orig_diffused = self.stochastic_encode(x_orig.clone(), torch.tensor([index] * (x_latent.shape[0])).to(
-                    x_latent.device))
-
-                x_dec = x_dec * mask + x_orig_diffused * (1 - mask)
-
+                                          
         out = {}
         out['x_dec'] = x_dec
         out['video'] = torch.stack(self.images, dim=0) if len(self.images) != 0 else None
+        out["mask"] = self.mask if self.mask is not None else None
         # print(f"Video shape: {out['video'].shape}")
         out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
         self.images = []
