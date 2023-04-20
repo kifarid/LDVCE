@@ -52,7 +52,8 @@ def load_img(path):
     return image, pil_iamge
 
 
-def compute_lp_dist(diff, p):
+def compute_lp_dist(x, y, p: int):
+    diff = x - y 
     diff_abs_flat = diff.abs().view(diff.shape[0], -1)
     if p == 1.0:
         lp_dist = torch.sum(diff_abs_flat, dim=1)

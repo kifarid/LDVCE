@@ -1,0 +1,29 @@
+data_path: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+
+diffusion_model:
+  cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
+  ckpt_path: "models/ldm/cin256-v2/model.ckpt"
+
+seg_model:
+  version: 'ViT-B/16'
+  path: 'src/clipseg/weights/rd64-uni.pth'
+
+classifier_model:
+  name: "efficientnet_b0"
+
+n_samples_per_class: 2
+strength: 0.27 #0.25
+scale: 2.85
+ddim_steps: 500
+ddim_eta: 0.
+latent_t_0: True
+
+sampler:
+  enforce_same_norms: True
+  guidance: "non-projection"
+  classifier_lambda: 1.8
+  dist_lambda: 0.3
+  mask_guidance: False
+  backprop_diffusion: True   
+  lp_custom: "dino_cossim"
+  log_backprop_gradients: False
