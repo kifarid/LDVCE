@@ -1,14 +1,20 @@
 import os
 import torch
+from torch import nn
+from torch import Tensor
 import pytorch_lightning as pl
 from omegaconf import OmegaConf
 from torch.nn import functional as F
+from torch.nn import Linear
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import LambdaLR
 from copy import deepcopy
 from einops import rearrange
 from glob import glob
 from natsort import natsorted
+import kornia.augmentation as K
+import torchvision
+from torchvision.models import resnet18
 
 from ldm.modules.diffusionmodules.openaimodel import EncoderUNetModel, UNetModel
 from ldm.util import log_txt_as_img, default, ismap, instantiate_from_config
@@ -25,6 +31,49 @@ def disabled_train(self, mode=True):
     return self
 
 
+class DataAugmentation(nn.Module):
+    """Module to perform data augmentation using Kornia on torch tensors."""
+
+    def __init__(self, apply_color_jitter: bool = False, latent = False) -> None:
+        super().__init__()
+        self._apply_color_jitter = apply_color_jitter
+        self._latent = latent
+        self.transforms = K.AugmentationSequential(
+            K.RandomErasing(p=0.1, scale=(0.01, 0.33), ratio=(0.3, 3.3), value=0.45),
+            K.RandomHorizontalFlip(p=0.5),
+            K.RandomAffine(360, [0.1, 0.1], [0.7, 1.2], [30., 50.], p=0.5),
+            K.RandomPerspective(0.5, p=0.3),
+            K.RandomChannelShuffle(p=0.3),
+            K.RandomThinPlateSpline(p=0.3),
+            same_on_batch=False,
+
+        ) if latent else K.AugmentationSequential(
+            K.RandomErasing(p=0.1, scale=(0.01, 0.33), ratio=(0.3, 3.3), value=0.45),
+            K.RandomHorizontalFlip(p=0.2),
+            K.RandomAffine(360, [0.1, 0.1], [0.7, 1.2], [30., 50.], p=0.2),
+            K.RandomPerspective(0.5, p=0.2),
+            #K.RandomChannelShuffle(p=0.2),
+            K.RandomThinPlateSpline(p=0.2),
+            K.ColorJitter(0.1, 0.1, 0.1, 0.1, p=0.1),
+            same_on_batch=False,
+        )
+
+
+        self.jitter = K.ColorJitter(0.1, 0.1, 0.1, 0.1, p=0.2)
+
+    @torch.no_grad()  # disable gradients for effiency
+    def forward(self, x: Tensor) -> Tensor:
+        #print("ranges of x before: ", x.min(), x.max())
+        # covert from -1 to 1 to 0 to 1
+        x = (x + 1) / 2
+        x_out = self.transforms(x)  # BxCxHxW
+        if self._apply_color_jitter and not self._latent:
+            x_out = self.jitter(x_out)
+        # convert back to -1 to 1
+        x_out = x_out * 2 - 1
+        #print("ranges of x after: ", x_out.min(), x_out.max())
+        return x_out
+
 class NoisyLatentImageClassifier(pl.LightningModule):
 
     def __init__(self,
@@ -33,24 +82,32 @@ class NoisyLatentImageClassifier(pl.LightningModule):
                  ckpt_path=None,
                  pool='attention',
                  label_key=None,
+                 diffusion_classifier_steps_ratio=10,
                  diffusion_ckpt_path=None,
                  scheduler_config=None,
+                 backbone='unet_encoder',
                  weight_decay=1.e-2,
                  log_steps=10,
                  monitor='val/loss',
+                 image_aug = False,
+                 latent_aug = False,
                  *args,
                  **kwargs):
         super().__init__(*args, **kwargs)
         self.num_classes = num_classes
+        self.backbone = backbone
         # get latest config of diffusion model
-        diffusion_config = natsorted(glob(os.path.join(diffusion_path, 'configs', '*-project.yaml')))[-1]
-        self.diffusion_config = OmegaConf.load(diffusion_config).model
+        #diffusion_config = natsorted(glob(os.path.join(diffusion_path, 'configs', '*-project.yaml')))[-1]
+        self.diffusion_config = OmegaConf.load(diffusion_path).model
+        self.diffusion_ckpt_path = diffusion_ckpt_path
+        self.diffusion_classifier_steps_ratio = diffusion_classifier_steps_ratio
+        #print("getting diffusion path", self.diffusion_config.params, self.diffusion_ckpt_path)
         self.diffusion_config.params.ckpt_path = diffusion_ckpt_path
         self.load_diffusion()
 
         self.monitor = monitor
         self.numd = self.diffusion_model.first_stage_model.encoder.num_resolutions - 1
-        self.log_time_interval = self.diffusion_model.num_timesteps // log_steps
+        self.log_time_interval = self.diffusion_model.num_timesteps //self.diffusion_classifier_steps_ratio // log_steps
         self.log_steps = log_steps
 
         self.label_key = label_key if not hasattr(self.diffusion_model, 'cond_stage_key') \
@@ -66,6 +123,9 @@ class NoisyLatentImageClassifier(pl.LightningModule):
         self.scheduler_config = scheduler_config
         self.use_scheduler = self.scheduler_config is not None
         self.weight_decay = weight_decay
+
+        self.image_transform = DataAugmentation(apply_color_jitter= True) if image_aug else None
+        self.latent_transform = DataAugmentation(apply_color_jitter= True, latent = True)  if latent_aug else None
 
     def init_from_ckpt(self, path, ignore_keys=list(), only_model=False):
         sd = torch.load(path, map_location="cpu")
@@ -92,14 +152,38 @@ class NoisyLatentImageClassifier(pl.LightningModule):
         for param in self.diffusion_model.parameters():
             param.requires_grad = False
 
-    def load_classifier(self, ckpt_path, pool):
-        model_config = deepcopy(self.diffusion_config.params.unet_config.params)
-        model_config.in_channels = self.diffusion_config.params.unet_config.params.out_channels
-        model_config.out_channels = self.num_classes
-        if self.label_key == 'class_label':
-            model_config.pool = pool
 
-        self.model = __models__[self.label_key](**model_config)
+    def load_classifier(self, ckpt_path, pool):
+        if self.backbone == 'unet_encoder':
+            model_config = deepcopy(self.diffusion_config.params.unet_config.params)
+            model_config.in_channels = self.diffusion_config.params.unet_config.params.out_channels
+            model_config.out_channels = self.num_classes
+            if self.label_key == 'class_label':
+                model_config.pool = pool
+            self.model =  __models__[self.label_key](**model_config)
+        #check if model is in torchvision models
+        else:
+            print("Looking for model from torchvision.models")
+            try:
+                self.model = getattr(torchvision.models, self.backbone)(pretrained=True)
+            except:
+                raise NotImplementedError(f"Model {self.backbone} not implemented")
+           
+            if hasattr(self.model, 'fc'):
+                try:
+                    self.model.fc = Linear(self.model.fc.in_features, self.num_classes)
+                except:
+                    raise NotImplementedError(f"Model {self.backbone} final layer mistmatch")
+            
+            elif hasattr(self.model, 'classifier'):
+                try:
+                    print(f"classifier size is {len(self.model.classifier)}")
+                    self.model.classifier[-1] = Linear(self.model.classifier[-1].in_features, self.num_classes)
+                except:
+                    raise NotImplementedError(f"Model {self.backbone} final layer mistmatch")
+            else:
+                raise NotImplementedError(f"Model {self.backbone} final layer structure not recognized")
+
         if ckpt_path is not None:
             print('#####################################################################')
             print(f'load from ckpt "{ckpt_path}"')
@@ -110,23 +194,29 @@ class NoisyLatentImageClassifier(pl.LightningModule):
     def get_x_noisy(self, x, t, noise=None):
         noise = default(noise, lambda: torch.randn_like(x))
         continuous_sqrt_alpha_cumprod = None
-        if self.diffusion_model.use_continuous_noise:
-            continuous_sqrt_alpha_cumprod = self.diffusion_model.sample_continuous_noise_level(x.shape[0], t + 1)
-            # todo: make sure t+1 is correct here
+        # if self.diffusion_model.use_continuous_noise:
+        #     continuous_sqrt_alpha_cumprod = self.diffusion_model.sample_continuous_noise_level(x.shape[0], t + 1)
+        #     # todo: make sure t+1 is correct here
 
-        return self.diffusion_model.q_sample(x_start=x, t=t, noise=noise,
-                                             continuous_sqrt_alpha_cumprod=continuous_sqrt_alpha_cumprod)
+        return self.diffusion_model.q_sample(x_start=x, t=t, noise=noise)
 
     def forward(self, x_noisy, t, *args, **kwargs):
-        return self.model(x_noisy, t)
+        return self.model(x_noisy) #, t)
 
     @torch.no_grad()
     def get_input(self, batch, k):
         x = batch[k]
+        
+
         if len(x.shape) == 3:
             x = x[..., None]
         x = rearrange(x, 'b h w c -> b c h w')
         x = x.to(memory_format=torch.contiguous_format).float()
+
+        if self.image_transform is not None and self.trainer.training:
+            #print("Applying image transform")
+            x = self.image_transform(x)
+
         return x
 
     @torch.no_grad()
@@ -172,17 +262,22 @@ class NoisyLatentImageClassifier(pl.LightningModule):
 
         self.log_dict(log, prog_bar=False, logger=True, on_step=self.training, on_epoch=True)
         self.log('loss', log[f"{log_prefix}/loss"], prog_bar=True, logger=False)
-        self.log('global_step', self.global_step, logger=False, on_epoch=False, prog_bar=True)
+        #self.log('global_step', self.global_step, logger=False, on_epoch=False, prog_bar=True)
         lr = self.optimizers().param_groups[0]['lr']
         self.log('lr_abs', lr, on_step=True, logger=True, on_epoch=False, prog_bar=True)
 
     def shared_step(self, batch, t=None):
         x, *_ = self.diffusion_model.get_input(batch, k=self.diffusion_model.first_stage_key)
+
+        if self.latent_transform is not None and self.trainer.training:
+            #print("Applying latent transform")
+            x = self.latent_transform(x)
+
         targets = self.get_conditioning(batch)
         if targets.dim() == 4:
             targets = targets.argmax(dim=1)
         if t is None:
-            t = torch.randint(0, self.diffusion_model.num_timesteps, (x.shape[0],), device=self.device).long()
+            t = torch.randint(0, self.diffusion_model.num_timesteps //self.diffusion_classifier_steps_ratio, (x.shape[0],), device=self.device).long()
         else:
             t = torch.full(size=(x.shape[0],), fill_value=t, device=self.device).long()
         x_noisy = self.get_x_noisy(x, t)
@@ -201,19 +296,24 @@ class NoisyLatentImageClassifier(pl.LightningModule):
 
     def reset_noise_accs(self):
         self.noisy_acc = {t: {'acc@1': [], 'acc@5': []} for t in
-                          range(0, self.diffusion_model.num_timesteps, self.diffusion_model.log_every_t)}
+                          range(0, self.diffusion_model.num_timesteps //self.diffusion_classifier_steps_ratio,
+                                self.diffusion_model.log_every_t // self.diffusion_classifier_steps_ratio )}
 
     def on_validation_start(self):
         self.reset_noise_accs()
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        loss, *_ = self.shared_step(batch)
+        loss, *_ = self.shared_step(batch, t=0)
 
         for t in self.noisy_acc:
             _, logits, _, targets = self.shared_step(batch, t)
             self.noisy_acc[t]['acc@1'].append(self.compute_top_k(logits, targets, k=1, reduction='mean'))
             self.noisy_acc[t]['acc@5'].append(self.compute_top_k(logits, targets, k=5, reduction='mean'))
+            #log noisy_acc @t [f'inputs@t{current_time}']
+            # added log
+            self.log(f'val/noisy_acc@{t}@1', self.noisy_acc[t]['acc@1'][-1], on_step=False, on_epoch=True)
+            self.log(f'val/noisy_acc@{t}@5', self.noisy_acc[t]['acc@5'][-1], on_step=False, on_epoch=True)
 
         return loss
 
@@ -239,7 +339,10 @@ class NoisyLatentImageClassifier(pl.LightningModule):
         log = dict()
         x = self.get_input(batch, self.diffusion_model.first_stage_key)
         log['inputs'] = x
+        # z, *_ = self.diffusion_model.get_input(batch, k=self.diffusion_model.first_stage_key)
+        # log["inputs_after_first_stage"] = z
 
+        #log image after first stage model
         y = self.get_conditioning(batch)
 
         if self.label_key == 'class_label':
@@ -249,17 +352,22 @@ class NoisyLatentImageClassifier(pl.LightningModule):
         if ismap(y):
             log['labels'] = self.diffusion_model.to_rgb(y)
 
-            for step in range(self.log_steps):
-                current_time = step * self.log_time_interval
+        for step in range(self.log_steps):
+            current_time = step * self.log_time_interval
 
-                _, logits, x_noisy, _ = self.shared_step(batch, t=current_time)
+            _, logits, x_noisy, _ = self.shared_step(batch, t=current_time)
 
-                log[f'inputs@t{current_time}'] = x_noisy
+            log[f'inputs@t{current_time}'] = x_noisy
 
-                pred = F.one_hot(logits.argmax(dim=1), num_classes=self.num_classes)
-                pred = rearrange(pred, 'b h w c -> b c h w')
-
-                log[f'pred@t{current_time}'] = self.diffusion_model.to_rgb(pred)
+            if ismap(y):
+                    pred = F.one_hot(logits.argmax(dim=1), num_classes=self.num_classes)
+                    pred = rearrange(pred, 'b h w c -> b c h w')
+                    log[f'pred@t{current_time}'] = self.diffusion_model.to_rgb(pred)
+                    pred = F.one_hot(logits.argmax(dim=1), num_classes=self.num_classes)
+            else:
+                pred = logits.argmax(dim=1)
+                #y = log_txt_as_img((x_noisy.shape[2], x_noisy.shape[3]),  pred)
+                #log[f'pred@t{current_time}'] = y
 
         for key in log:
             log[key] = log[key][:N]

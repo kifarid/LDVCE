@@ -211,8 +211,8 @@ class DDIMSampler(object):
             sqrt_alphas_cumprod = self.sqrt_alphas_cumprod
             sqrt_one_minus_alphas_cumprod = self.sqrt_one_minus_alphas_cumprod
         else:
-            sqrt_alphas_cumprod = torch.sqrt(self.ddim_alphas)
-            sqrt_one_minus_alphas_cumprod = self.ddim_sqrt_one_minus_alphas
+            sqrt_alphas_cumprod = torch.sqrt(self.ddim_alphas).to(x0.device)
+            sqrt_one_minus_alphas_cumprod = self.ddim_sqrt_one_minus_alphas.to(x0.device)
 
         if noise is None:
             noise = torch.randn_like(x0)

@@ -1,4 +1,6 @@
-data/
+wandb/
+data/imagenette2
+
 logs/
 results/
 outputs/
@@ -8,8 +10,11 @@ latent_diffusion.egg-info
 cdiff copy*
 
 scripts/models/ldm/cin256-v2/model.ckpt
+models/ldm/cin256-v2
+models/ldm/cin256-v2/model.ckpt
 __pycache__/
 __pycache__/
 ldm/models/diffusion/__pycache__/
-src/taming-transformers
+
+src/
 src/clipseg
