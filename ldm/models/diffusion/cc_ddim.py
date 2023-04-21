@@ -5,6 +5,8 @@ import torchvision.transforms.functional as tf
 from torch import distributions as torchd
 from torch.nn import functional as F
 from tqdm import tqdm
+import time 
+import sys
 
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like, \
     extract_into_tensor
@@ -65,7 +67,8 @@ class CCDDIMSampler(object):
         x = tf.center_crop(x, 224)
         x = normalize(_map_img(x))
         logit = self.classifier(x)  # (TODO) add option for t here
-        dist = torchd.independent.Independent(OneHotDist(logit), 1)
+
+        dist = torchd.independent.Independent(OneHotDist(logit, validate_args = False), 1)
         return dist
 
     def get_mask(self):
@@ -552,7 +555,7 @@ class CCMDDIMSampler(object):
         x = tf.center_crop(x, 224)
         x = normalize(_map_img(x))
         logit = self.classifier(x)  # (TODO) add option for t here
-        dist = torchd.independent.Independent(OneHotDist(logit), 1)
+        dist = torchd.independent.Independent(OneHotDist(logit, validate_args = False), 1)
         return dist
 
     def get_mask(self):
@@ -971,6 +974,7 @@ class CCMDDIMSampler(object):
         # else:
         x_dec = x_latent if not latent_t_0 else self.stochastic_encode(x_latent.clone(), torch.tensor([t_start] * (x_latent.shape[0])).to(x_latent.device))
         for i, step in enumerate(iterator):
+            tic = time.time()
             index = total_steps - i - 1
             ts = torch.full((x_latent.shape[0],), step, device=x_latent.device, dtype=torch.long)
 
@@ -983,7 +987,13 @@ class CCMDDIMSampler(object):
             x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
                                           unconditional_guidance_scale=unconditional_guidance_scale,
                                           unconditional_conditioning=unconditional_conditioning, y=y)
-                                          
+            #workaround for long running time
+            elapsed_time = time.time() - tic
+            if elapsed_time > 6:
+                print(f"Iteration time {elapsed_time} exceeded limit 6 secs, terminating program...")
+                print("x_dec device: ", x_dec.device)
+                sys.exit(1)  # Terminate the program with exit code 1 (indicating an error)                
+
         out = {}
         out['x_dec'] = x_dec
         out['video'] = torch.stack(self.images, dim=0) if len(self.images) != 0 else None
