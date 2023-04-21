@@ -559,6 +559,11 @@ class CCMDDIMSampler(object):
 
         self.classification_criterion = torch.nn.CrossEntropyLoss()
         if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom:
+            # dinov2 requires PyTorch 2.0!
+            # dinov2_vits14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+            # dinov2_vitb14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+            # dinov2_vitl14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+            # dinov2_vitg14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
             self.distance_criterion = DinoLoss(dino=torch.hub.load('facebookresearch/dino:main', 'dino_vitb16').eval(), loss_identifier=self.lp_custom.split("_")[-1])
             self.dino_init_features = None
         elif isinstance(self.lp_custom, int):
