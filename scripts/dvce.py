@@ -27,30 +27,41 @@ import regex as re
 from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
+import argparse
+parser = argparse.ArgumentParser(
+    prog='Generate counterfactuals',
+    description='Generates counterfactuals')
+parser.add_argument("--lmb_username", type=str, default="faridk")
+parser.add_argument("--wandb_entity", type=str, default="kifarid")
+args = parser.parse_args()
+
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
+LMB_USERNAME = args.lmb_username
 os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
-os.environ['WANDB_DIR'] = "/misc/lmbraid21/faridk/.wandb"
-os.environ['WANDB_DATA_DIR'] = "/misc/lmbraid21/faridk/"
-os.environ['WANDB_CACHE_DIR'] = "/misc/lmbraid21/faridk/.cache/wandb"
+os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
+os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
+os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
+WANDB_ENTITY = args.wandb_entity
+WANDB_ENABLED = True
 
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
-        lines = f.read().splitlines()
-        assert len(lines) == 1000
+    lines = f.read().splitlines()
+    assert len(lines) == 1000
 
-        for line in lines:
-            key, value = line.split(":")
-            i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip()) #value.strip().strip("'").strip(",").strip("\"")
+    for line in lines:
+        key, value = line.split(":")
+        i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip()) #value.strip().strip("'").strip(",").strip("\"")
 
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v3")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v4")
 def main(cfg : DictConfig) -> None:
     # load model
     config = {}
     config.update(OmegaConf.to_container(cfg, resolve=True))
 
-    run = wandb.init(entity="kifarid", project="cdiff", dir = "/misc/lmbraid21/faridk", config=config)
+    run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="enabled" if WANDB_ENABLED else "disabled")
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     print(f"using device: {device}")
 
@@ -109,6 +120,10 @@ def main(cfg : DictConfig) -> None:
         init_image = image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
         sampler.init_labels = n_samples_per_class * [label]
+        if isinstance(cfg.sampler.lp_custom, str) and "dino_" in cfg.sampler.lp_custom:
+            if device != next(sampler.distance_criterion.dino.parameters()).device:
+                sampler.distance_criterion.dino = sampler.distance_criterion.dino.to(device)
+            sampler.dino_init_features = sampler.get_dino_features(sampler.init_images, device=device).clone()
         mapped_image = _unmap_img(init_image)
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space

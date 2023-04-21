@@ -1,10 +1,12 @@
 import numpy as np
 import regex as re
 import torch
+import torchvision
 import torchvision.transforms.functional as tf
 from torch import distributions as torchd
 from torch.nn import functional as F
 from tqdm import tqdm
+from functools import partial
 import time 
 import sys
 
@@ -22,6 +24,27 @@ with open('data/imagenet_clsidx_to_label.txt', "r") as f:
         key, value = line.split(":")
         i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip())  # value.strip().strip("'").strip(",").strip("\"")
 
+class DinoLoss(torch.nn.Module):
+    def __init__(self, dino: torch.nn.Module, loss_identifier: str) -> None:
+        super().__init__()
+        self.dino = dino
+        self.loss_identifier = loss_identifier
+        if "cossim" == loss_identifier:
+            self.loss = torch.nn.CosineSimilarity()
+        elif "1" == loss_identifier:
+            self.loss = torch.nn.L1Loss()
+        elif "2" == loss_identifier:
+            self.loss = torch.nn.MSELoss()
+        else:
+            raise NotImplementedError
+
+    def forward(self, output, target):
+        dino_features = normalize(_map_img(tf.center_crop(output, output_size=224)))
+        dino_features =  self.dino(output)
+        if "cossim" == self.loss_identifier:
+            return 1 - self.loss(dino_features, target)
+        else:
+            return self.loss(dino_features, target)
 
 class CCDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
@@ -515,7 +538,7 @@ class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, masked_guidance=False,
-                 backprop_diffusion=True, mask_alpha = 5., **kwargs):
+                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., **kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -529,6 +552,7 @@ class CCMDDIMSampler(object):
         self.classifier = classifier
         self.guidance = guidance
         self.backprop_diffusion = backprop_diffusion
+        self.log_backprop_gradients = log_backprop_gradients
         # self.projected_counterfactuals = projected_counterfactuals
         self.deg_cone_projection = deg_cone_projection
         self.denoise_dist_input = denoise_dist_input
@@ -539,8 +563,27 @@ class CCMDDIMSampler(object):
         self.mask_alpha = mask_alpha
 
         self.init_images = None
-        self.init_labels = None
+        self.init_labels = None            
         self.mask = None
+
+        self.classification_criterion = torch.nn.CrossEntropyLoss()
+        if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom:
+            # dinov2 requires PyTorch 2.0!
+            # dinov2_vits14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vits14')
+            # dinov2_vitb14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
+            # dinov2_vitl14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
+            # dinov2_vitg14 = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
+            self.distance_criterion = DinoLoss(dino=torch.hub.load('facebookresearch/dino:main', 'dino_vitb16').eval(), loss_identifier=self.lp_custom.split("_")[-1])
+            self.dino_init_features = None
+        elif isinstance(self.lp_custom, int):
+            if self.lp_custom == 1:
+                self.distance_criterion = torch.nn.L1Loss()
+            elif self.lp_custom == 2:
+                self.distance_criterion = torch.nn.MSELoss()
+            else:
+                raise NotImplementedError
+        else:
+            raise NotImplementedError
 
     def get_classifier_dist(self, x, t=None):
         """
@@ -557,6 +600,24 @@ class CCMDDIMSampler(object):
         logit = self.classifier(x)  # (TODO) add option for t here
         dist = torchd.independent.Independent(OneHotDist(logit, validate_args = False), 1)
         return dist
+
+    def get_classifier_logits(self, x, t=None):
+        """
+        Returns classifier logits
+        Args:
+            x: input image for which to create the prediction
+
+        Returns:
+            logits: logits of output layer of target model
+
+        """
+        x = tf.center_crop(x, 224)
+        x = normalize(_map_img(x))
+        return self.classifier(x)
+
+    def get_dino_features(self, x, device):
+        x = normalize(_map_img(tf.center_crop(x, output_size=224)))
+        return self.distance_criterion.dino(x.to(device))
 
     def get_mask(self):
         """
@@ -580,7 +641,7 @@ class CCMDDIMSampler(object):
         return self.mask
 
     def get_output(self, x, t, c, index, unconditional_conditioning, use_original_steps=True, quantize_denoised=True,
-                   return_decoded=False):
+                   return_decoded=False, return_pred_latent_x0=False):
         b, device = x.shape[0], x.device
         x_in = torch.cat([x] * 2)
         t_in = torch.cat([t] * 2)
@@ -603,8 +664,11 @@ class CCMDDIMSampler(object):
             pred_x0 = self.model.differentiable_decode_first_stage(
                 pred_latent_x0)  # if self.model_type == "latent" else pred_latent_x0
             # pred_x0 = torch.clamp((pred_x0 + 1.0) / 2.0, min=0.0, max=1.0)
-            return e_t_uncond, e_t, pred_x0
-
+            
+            if return_pred_latent_x0:
+                return e_t_uncond, e_t, pred_x0, pred_latent_x0
+            else:
+                return e_t_uncond, e_t, pred_x0
         else:
             return e_t_uncond, e_t
 
@@ -655,40 +719,76 @@ class CCMDDIMSampler(object):
             assert x.requires_grad == False, "x requires grad"
 
             if self.classifier_lambda != 0:
-                x_grad = x.detach().requires_grad_()
-                e_t_uncond, e_t, pred_x0 = self.get_output(x_grad, t, c, index, unconditional_conditioning,
+                x_noise = x.detach().requires_grad_()
+                ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
                                                            use_original_steps, quantize_denoised=quantize_denoised,
-                                                           return_decoded=True)
+                                                           return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
+                if self.log_backprop_gradients:
+                    e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
+                else:
+                    e_t_uncond, e_t, pred_x0 = ret_vals
+                
                 classifier_dist = self.get_classifier_dist(pred_x0)
                 y_one_hot = F.one_hot(y, classifier_dist.event_shape[-1]).to(device)
                 log_probs = classifier_dist.log_prob(y_one_hot)
                 prob_best_class = torch.exp(log_probs)
                 # print("prob_best_class", prob_best_class, log_probs)
 
-                grad_classifier = torch.autograd.grad(log_probs, x_grad)[
-                    0]
+                # pred_logits = self.get_classifier_logits(pred_x0)
+                # classification_loss = self.classification_criterion(pred_logits, y)
+
+                if self.log_backprop_gradients: pred_latent_x0.retain_grad()
+
+                grad_classifier = torch.autograd.grad(log_probs, x_noise)[0]
+                # grad_classifier = torch.autograd.grad(classification_loss, x_noise, retain_graph=False)[0]
+                # classification_loss.backward(retain_graph=False)
+                # grad_classifier = torch.clone(x_noise.grad.data).detach()
+
+                if self.log_backprop_gradients:
+                    alphas = self.model.alphas_cumprod if use_original_steps else self.ddim_alphas
+                    sqrt_one_minus_alphas = self.model.sqrt_one_minus_alphas_cumprod if use_original_steps else self.ddim_sqrt_one_minus_alphas
+                    a_t = torch.full((b, 1, 1, 1), alphas[index], device=device)
+                    a_t_sqrt = a_t.sqrt()
+                    sqrt_one_minus_at = torch.full((b, 1, 1, 1), sqrt_one_minus_alphas[index], device=device)
+                    grad_pred_latent_x0 = pred_latent_x0.grad.data
+                    grad_unet_wrt_zt = (grad_classifier*a_t_sqrt/grad_pred_latent_x0 - 1)*(-1/sqrt_one_minus_at)
+
+                    cossim = torch.nn.CosineSimilarity()
+                    cossim_wpre = cossim(grad_classifier.view(2, -1), grad_pred_latent_x0.view(2, -1))
+                    
+                    print(torch.norm(grad_classifier, dim=(2,3)), torch.norm(grad_pred_latent_x0, dim=(2,3)), torch.norm(grad_unet_wrt_zt, dim=(2,3)))
+                    print(cossim_wpre)
+
         with torch.enable_grad():
             if self.lp_custom:
                 assert x.requires_grad == False, "x requires grad"
-                x_grad = x.detach().requires_grad_()
-                e_t_uncond, e_t, pred_x0 = self.get_output(x_grad, t, c, index, unconditional_conditioning,
+                x_noise = x.detach().requires_grad_()
+                ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
                                                            use_original_steps, quantize_denoised=quantize_denoised,
-                                                           return_decoded=True)
+                                                           return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
+                if self.log_backprop_gradients:
+                    e_t_uncond, e_t, pred_x0, _ = ret_vals
+                else:
+                    e_t_uncond, e_t, pred_x0 = ret_vals
                 # print("computing the lp gradient")
                 assert pred_x0.requires_grad == True, "pred_x0 does not require grad"
                 pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
 
-                diff = pred_x0_0to1 - self.init_images.to(x.device)
-                # print("diff is:", diff.mean())
-                lp_dist = compute_lp_dist(diff, self.lp_custom)
-                lp_grad = torch.autograd.grad(lp_dist.mean(), x_grad)[0]
+                if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom:
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device))
+                else:
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
+                
+                lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise)[0]
+                # lp_grad = lp_dist.backward()
+                # lp_grad = torch.clone(x_noise.grad.data).detach()
 
         # assert e_t_uncond.requires_grad == True and e_t.requires_grad == True, "e_t_uncond and e_t should require gradients"
 
-        if self.guidance == "projected":
-            implicit_classifier_score = (e_t - e_t_uncond)  # .detach()
-            # check gradient tracking on implicit_classifier_score
-            assert implicit_classifier_score.requires_grad == False, "implicit_classifier_score requires grad"
+        # if self.guidance == "projected":
+        implicit_classifier_score = (e_t - e_t_uncond)  # .detach()
+        # check gradient tracking on implicit_classifier_score
+        assert implicit_classifier_score.requires_grad == False, "implicit_classifier_score requires grad"
 
         if self.lp_custom or self.classifier_lambda != 0:
             alphas = self.model.alphas_cumprod if use_original_steps else self.ddim_alphas
@@ -746,10 +846,10 @@ class CCMDDIMSampler(object):
 
     def register_buffer(self, name, attr):
         if type(attr) == torch.Tensor:
-            pass
+            #pass
             # TODO: this is a hack to make it work on CPU
-            # if attr.device != torch.device("cuda"):
-            #    attr = attr.to(torch.device("cuda"))
+            if attr.device != torch.device("cuda"):
+               attr = attr.to(torch.device("cuda"))
         setattr(self, name, attr)
 
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):
