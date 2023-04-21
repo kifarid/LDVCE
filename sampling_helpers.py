@@ -91,8 +91,8 @@ def renormalize(a, b, small_const=1e-22):
 
 class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
 
-    def __init__(self, logits=None, probs=None):
-        super().__init__(logits=logits, probs=probs)
+    def __init__(self, logits=None, probs=None, validate_args=None):
+        super().__init__(logits=logits, probs=probs, validate_args=validate_args)
 
     def mode(self):
         _mode = F.one_hot(torch.argmax(super().logits, axis=-1), super().logits.shape[-1])

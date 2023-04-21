@@ -14,7 +14,7 @@ classifier_model:
 n_samples_per_class: 2
 strength: 0.5
 scale: 3.0
-ddim_steps: 250
+ddim_steps: 500
 ddim_eta: 0.
 latent_t_0: True
 
@@ -22,8 +22,8 @@ sampler:
 
   enforce_same_norms: True
   guidance: "projected"
-  classifier_lambda: 5
-  dist_lambda: 0.01
+  classifier_lambda: 3.5
+  dist_lambda: 0.005
   masked_guidance: True
   backprop_diffusion: True
   lp_custom: 1

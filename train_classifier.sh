@@ -6,8 +6,9 @@
 
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
-#PBS -q student
 #PBS hostlist=^terence,spencer
+
+##PBS -q student
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
