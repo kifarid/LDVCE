@@ -55,6 +55,7 @@ def main(cfg : DictConfig) -> None:
 
     run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="enabled" if WANDB_ENABLED else "disabled")
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    #device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
     print(f"using device: {device}")
 
     if cfg.seg_model is not None:
@@ -63,13 +64,13 @@ def main(cfg : DictConfig) -> None:
         model_seg.eval()
         model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
 
-    model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device)
+    model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device).eval()
     classifier_name = "efficientnet_b0"
     classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
 
-    torch.autograd.set_detect_anomaly(True)
+    torch.autograd.set_detect_anomaly(False)
     ddim_steps = cfg.ddim_steps
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance

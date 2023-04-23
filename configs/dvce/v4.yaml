@@ -25,5 +25,5 @@ sampler:
   dist_lambda: 0.3
   mask_guidance: False
   backprop_diffusion: True   
-  lp_custom: "dino_cossim"
+  lp_custom: 1
   log_backprop_gradients: False
