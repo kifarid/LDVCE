@@ -27,22 +27,14 @@ import regex as re
 from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
-import argparse
-parser = argparse.ArgumentParser(
-    prog='Generate counterfactuals',
-    description='Generates counterfactuals')
-parser.add_argument("--lmb_username", type=str, default="faridk")
-parser.add_argument("--wandb_entity", type=str, default="kifarid")
-args = parser.parse_args()
-
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
-LMB_USERNAME = args.lmb_username
+LMB_USERNAME = "faridk"
 os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
 os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
-WANDB_ENTITY = args.wandb_entity
+WANDB_ENTITY = "kifarid"
 WANDB_ENABLED = True
 
 i2h = dict()
