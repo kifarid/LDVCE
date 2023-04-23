@@ -13,7 +13,8 @@ import sys
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like, \
     extract_into_tensor
 from sampling_helpers import _map_img, normalize, renormalize, _renormalize_gradient, \
-    OneHotDist, compute_lp_dist, cone_project
+    OneHotDist, compute_lp_dist, cone_project, segment, detect
+
 
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
@@ -619,12 +620,16 @@ class CCMDDIMSampler(object):
         x = normalize(_map_img(tf.center_crop(x, output_size=224)))
         return self.distance_criterion.dino(x.to(device))
 
-    def get_mask(self):
+    def get_mask_clip_seg(self):
         """
         this function returns a negative mask given by a segmentation model for the region of interest
         values are higher outside the region of interest
         """
+        if self.mask is not None:
+            return self.mask
+
         prompts = []
+
         for l in self.init_labels:
             prompts.append(re.sub(r'\b(\w)', lambda m: m.group(1).upper(), i2h[l]))
 
@@ -638,6 +643,30 @@ class CCMDDIMSampler(object):
             preds = (preds - preds.min()) / (preds.max() - preds.min())
             preds = torch.sigmoid(self.mask_alpha*2*(preds-0.5))
         self.mask = preds.to(self.init_images.device)
+        return self.mask
+
+    def get_mask(self):
+        """
+        this function returns a negative mask given by a segmentation model for the region of interest
+        values are higher outside the region of interest
+        """
+
+        if self.mask is not None:
+            return self.mask
+
+        with torch.no_grad():
+            print("input range", self.init_images.min(), self.init_images.max())
+            image_int8 = (self.init_images[0].permute(1, 2, 0).cpu().numpy() * 255.).astype(np.uint8)
+            # detected_boxes = detect(image, text_prompt=i2h[label], model=groundingdino_model, image_source=image_image)
+            detected_boxes = detect(normalize(self.init_images[0]).squeeze(),
+                                    text_prompt=i2h[self.init_labels[0]].split(',')[0],
+                                    model=self.detect_model)  # , image_source=image_int8)
+            segmented_frame_masks = segment(image_int8, self.seg_model, boxes=detected_boxes)
+            preds = torch.any(segmented_frame_masks, dim=0)
+            preds = preds.unsqueeze(0).repeat(self.init_images.shape[0], *(1,) * len(preds.shape))
+            # print("preds range after first seg ", preds.min(), preds.max())
+        self.mask = preds.to(self.init_images.device)
+
         return self.mask
 
     def get_output(self, x, t, c, index, unconditional_conditioning, use_original_steps=True, quantize_denoised=True,
@@ -1060,10 +1089,12 @@ class CCMDDIMSampler(object):
         if self.masked_guidance:
             print("### Getting the mask ###")
             mask = self.get_mask()
-            mask = F.interpolate(mask, size=x_latent.shape[-2:], mode='bilinear', align_corners=True)
-            mask = (mask - mask.min()) / (mask.max() - mask.min())
-            mask[mask < 0.5] = 0.
-            mask[mask >= 0.5] = 1.
+            mask = F.interpolate(mask.to(torch.uint8), size=x_latent.shape[-2:])
+            # mask = self.get_mask()
+            # mask = F.interpolate(mask, size=x_latent.shape[-2:], mode='bilinear', align_corners=True)
+            # mask = (mask - mask.min()) / (mask.max() - mask.min())
+            # mask[mask < 0.5] = 0.
+            # mask[mask >= 0.5] = 1.
 
         iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
 
@@ -1103,5 +1134,4 @@ class CCMDDIMSampler(object):
         self.images = []
         self.probs = []
         self.mask = None
-        
         return out

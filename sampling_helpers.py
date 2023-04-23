@@ -10,11 +10,80 @@ from torch import distributions as torchd
 from torch.nn import functional as F
 
 from ldm.util import instantiate_from_config
+from huggingface_hub import hf_hub_download
+
+from groundingdino.util import box_ops
+from groundingdino.util.slconfig import SLConfig
+from groundingdino.models import build_model
+from groundingdino.util.utils import clean_state_dict
+from groundingdino.util.inference import predict
 
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
 
+def load_model_hf(repo_id, filename, dir, ckpt_config_filename, device='cpu'):
+    cache_config_file = hf_hub_download(repo_id=repo_id, filename=ckpt_config_filename)
+
+    args = SLConfig.fromfile(cache_config_file)
+    args.device = device
+    model = build_model(args)
+
+    cache_file = hf_hub_download(repo_id=repo_id, filename=filename, cache_dir=dir)
+    checkpoint = torch.load(cache_file, map_location='cpu')
+    log = model.load_state_dict(clean_state_dict(checkpoint['model']), strict=False)
+    print("Model loaded from {} \n => {}".format(cache_file, log))
+    _ = model.eval()
+    return model.to(device)
+
+
+# detect object using grounding DINO
+def detect(image, text_prompt, model, box_threshold=0.4, text_threshold=0.4, image_source=None):
+    boxes, logits, phrases = predict(
+        model=model,
+        image=image,
+        caption=text_prompt,
+        box_threshold=box_threshold,
+        text_threshold=text_threshold
+    )
+
+    sorted_indices = torch.argsort(logits, descending=True)
+    sorted_boxes = boxes[sorted_indices]
+    return sorted_boxes
+
+
+def segment(image, sam_model, boxes):
+    sam_model.set_image(image)
+    H, W, _ = image.shape
+    if boxes.shape[0] == 0:
+        boxes_xyxy = torch.tensor([[0, 0, W, H]]).to(sam_model.device)
+    else:
+        boxes_xyxy = box_ops.box_cxcywh_to_xyxy(boxes) * torch.Tensor([W, H, W, H])
+
+    transformed_boxes = sam_model.transform.apply_boxes_torch(boxes_xyxy.to(sam_model.device), image.shape[:2])
+    masks, _, _ = sam_model.predict_torch(
+        point_coords=None,
+        point_labels=None,
+        boxes=transformed_boxes,
+        multimask_output=False,
+    )
+    if boxes.shape[0] == 0:
+        masks = ~masks
+    return masks.to(sam_model.device)
+
+
+def draw_mask(mask, image, random_color=True):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.8])], axis=0)
+    else:
+        color = np.array([30 / 255, 144 / 255, 255 / 255, 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+
+    annotated_frame_pil = Image.fromarray(image).convert("RGBA")
+    mask_image_pil = Image.fromarray((mask_image.cpu().numpy() * 255).astype(np.uint8)).convert("RGBA")
+
+    return np.array(Image.alpha_composite(annotated_frame_pil, mask_image_pil))
 
 # @title loading utils
 def load_model_from_config(config, ckpt):
