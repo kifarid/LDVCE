@@ -19,7 +19,9 @@ import torchvision
 from torchvision import transforms, datasets
 
 from src.clipseg.models.clipseg import CLIPDensePredT
+from segment_anything import build_sam, SamPredictor
 from sampling_helpers import disabled_train, get_model, _unmap_img, generate_samples
+from sampling_helpers import load_model_hf
 
 
 import sys
@@ -60,12 +62,17 @@ def main(cfg : DictConfig) -> None:
 
     if cfg.seg_model is not None:
         print("### Loading segmentation model ###")
-        model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
-        model_seg.eval()
-        model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
+        if cfg.seg_model.name == "clipseg":
+            model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
+            model_seg.eval()
+            model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
+        else:
+            detect_model = load_model_hf(repo_id=cfg.seg_model.dino.repo_id, filename= cfg.seg_model.dino.filename, dir = cfg.seg_model.dino.dir, ckpt_config_filename = cfg.seg_model.dino.ckpt_config_filename, device=device)
+            sam_checkpoint = os.path.join(cfg.pretrained_models_dir, 'sam_vit_h_4b8939.pth')
+            model_seg = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device))
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device).eval()
-    classifier_name = "efficientnet_b0"
+    classifier_name = cfg.classifier_model.name
     classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
@@ -75,7 +82,14 @@ def main(cfg : DictConfig) -> None:
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance
     strength = cfg.strength #for unconditional guidance
-    sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg.to(device) if cfg.seg_model is not None else None, **cfg.sampler)
+
+    if cfg.seg_model is None:
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, **cfg.sampler)
+    elif cfg.seg_model.name == "clipseg":
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, **cfg.sampler)
+    else:
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg.to(device), detect_model = detect_model.to(device), **cfg.sampler)
+
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'

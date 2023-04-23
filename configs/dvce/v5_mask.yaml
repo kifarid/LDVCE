@@ -1,0 +1,35 @@
+data_path: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+pretrained_models_dir: "/misc/lmbraid21/faridk/models"
+diffusion_model:
+  cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
+  ckpt_path: "models/ldm/cin256-v2/model.ckpt"
+
+seg_model:
+  name: "GD_SAM"
+  dino:
+    repo_id: "ShilongLiu/GroundingDINO"
+    filename: "groundingdino_swinb_cogcoor.pth"
+    dir: ${pretrained_models_dir}
+    ckpt_config_filename: "GroundingDINO_SwinB.cfg.py"
+  checkpoint: 'sam_vit_h_4b8939.pth'
+
+
+classifier_model:
+  name: "efficientnet_b0"
+
+n_samples_per_class: 2
+strength: 0.5
+scale: 3.0
+ddim_steps: 500
+ddim_eta: 0.
+latent_t_0: True
+
+sampler:
+
+  enforce_same_norms: True
+  guidance: "projected"
+  classifier_lambda: 3.5
+  dist_lambda: 0.005
+  masked_guidance: True
+  backprop_diffusion: True
+  lp_custom: 1

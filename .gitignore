@@ -18,3 +18,5 @@ ldm/models/diffusion/__pycache__/
 
 src/
 src/clipseg
+tench_eaten.png
+.gitignore
