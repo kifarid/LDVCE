@@ -72,7 +72,7 @@ def main(cfg : DictConfig) -> None:
         model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device)
-    classifier_name = "efficientnet_b0"
+    classifier_name = cfg.classifier_model.name
     classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
