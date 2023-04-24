@@ -8,6 +8,8 @@ import numpy as np
 
 
 import torch
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.benchmark = True
 from contextlib import nullcontext
 from torch import autocast
 
@@ -29,6 +31,8 @@ import regex as re
 from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
+from imagenet_classnames import name_map, folder_label_map
+
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
 LMB_USERNAME = "faridk"
@@ -37,7 +41,7 @@ os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
 WANDB_ENTITY = "kifarid"
-WANDB_ENABLED = True
+WANDB_ENABLED = False
 
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
@@ -48,25 +52,63 @@ with open('data/imagenet_clsidx_to_label.txt', "r") as f:
         key, value = line.split(":")
         i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip()) #value.strip().strip("'").strip(",").strip("\"")
 
+class ImageNet(datasets.ImageFolder):
+    classes = [name_map[i] for i in range(1000)]
+    name_map = name_map
+
+    def __init__(
+            self, 
+            root:str, 
+            split:str="val", 
+            transform=None, 
+            target_transform=None, 
+            class_idcs=None, 
+            start_sample: int = 0, 
+            end_sample: int = 50000//1000,
+            **kwargs
+    ):
+        _ = kwargs  # Just for consistency with other datasets.
+        assert split in ["train", "val"]
+        assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
+        path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
+        super().__init__(path, transform=transform, target_transform=target_transform)
+        if class_idcs is not None:
+            class_idcs = list(sorted(class_idcs))
+            tgt_to_tgt_map = {c: i for i, c in enumerate(class_idcs)}
+            self.classes = [self.classes[c] for c in class_idcs]
+            self.samples = [(p, tgt_to_tgt_map[t]) for p, t in self.samples if t in tgt_to_tgt_map]
+            self.class_to_idx = {k: tgt_to_tgt_map[v] for k, v in self.class_to_idx.items() if v in tgt_to_tgt_map}
+
+        if "val" == split: # reorder
+            new_samples = []
+            for idx in range(50000//1000):
+                new_samples.extend(self.samples[idx::50000//1000])
+            self.samples = new_samples[start_sample*1000:end_sample*1000]
+        else:
+            raise NotImplementedError
+
+        self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
+        self.targets = np.array(self.samples)[:, 1]
+
 
 @hydra.main(version_base=None, config_path="../configs/dvce", config_name="v4")
-def main(cfg : DictConfig) -> None:
+def main(cfg : DictConfig) -> None:    
     # load model
     config = {}
     config.update(OmegaConf.to_container(cfg, resolve=True))
 
     run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="enabled" if WANDB_ENABLED else "disabled")
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-    #device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
+    # device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
     print(f"using device: {device}")
 
-    if cfg.seg_model is not None:
+    if "seg_model" in cfg and cfg.seg_model is not None:
         print("### Loading segmentation model ###")
-        if cfg.seg_model.name == "clipseg":
+        if "name" in cfg.seg_model and cfg.seg_model.name == "clipseg":
             model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
             model_seg.eval()
             model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
-        else:
+        elif "name" in cfg.seg_model and cfg.seg_model.name == "GD_SAM":
             detect_model = load_model_hf(repo_id=cfg.seg_model.dino.repo_id, filename= cfg.seg_model.dino.filename, dir = cfg.seg_model.dino.dir, ckpt_config_filename = cfg.seg_model.dino.ckpt_config_filename, device=device)
             sam_checkpoint = os.path.join(cfg.pretrained_models_dir, 'sam_vit_h_4b8939.pth')
             model_seg = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device))
@@ -83,7 +125,7 @@ def main(cfg : DictConfig) -> None:
     scale = cfg.scale #for unconditional guidance
     strength = cfg.strength #for unconditional guidance
 
-    if cfg.seg_model is None:
+    if "seg_model" not in cfg or cfg.seg_model is None or "name" not in cfg.seg_model:
         sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, **cfg.sampler)
     elif cfg.seg_model.name == "clipseg":
         sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, **cfg.sampler)
@@ -107,9 +149,10 @@ def main(cfg : DictConfig) -> None:
         transforms.ToTensor()
     ]
     transform = transforms.Compose(transform_list)
-    dataset = datasets.ImageFolder(data_path,  transform=transform)
+    #dataset = datasets.ImageFolder(data_path,  transform=transform)
+    dataset = ImageNet(data_path, transform=transform)
     print("dataset length: ", len(dataset))
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=True, num_workers=4)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
         
