@@ -9,7 +9,7 @@ import numpy as np
 
 import torch
 torch.backends.cuda.matmul.allow_tf32 = True
-torch.backends.cudnn.benchmark = True
+# torch.backends.cudnn.benchmark = True
 from contextlib import nullcontext
 from torch import autocast
 
