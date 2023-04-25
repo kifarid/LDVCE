@@ -763,7 +763,7 @@ class CCMDDIMSampler(object):
                 with torch.enable_grad():
                     pred_logits = self.get_classifier_logits(pred_x0)
                     log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
-                    log_probs = log_probs[:, y.view(-1)]
+                    log_probs = log_probs[range(log_probs.size(0)), y.view(-1)]
                     prob_best_class = torch.exp(log_probs).mean().detach()
 
                     if self.log_backprop_gradients: pred_latent_x0.retain_grad()
@@ -772,6 +772,8 @@ class CCMDDIMSampler(object):
                         grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=False)[0]
                     else:
                         grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=True)[0]
+                        # grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=True)[0]
+                        # grad_classifier2 = torch.autograd.grad(log_probs[0].sum(), x_noise, retain_graph=False)[0]
 
                     if self.log_backprop_gradients:
                         alphas = self.model.alphas_cumprod if use_original_steps else self.ddim_alphas
