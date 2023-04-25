@@ -266,7 +266,7 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
                     # decode it
                     if ccdddim:
                         out = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
-                                             unconditional_conditioning=uc, y=xc.to(model.device), latent_t_0=latent_t_0)
+                                            unconditional_conditioning=uc, y=xc.to(model.device), latent_t_0=latent_t_0)
                         samples = out["x_dec"]
                         prob = out["prob"]
                         vid = out["video"]
@@ -274,32 +274,33 @@ def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, s
 
                     else:
                         samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
-                                                 unconditional_conditioning=uc)
+                                                unconditional_conditioning=uc)
 
                     x_samples = model.decode_first_stage(samples)
                     x_samples_ddim = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
-                    cat_samples = torch.cat([init_image[:1], x_samples_ddim], dim=0)
+                    cat_samples = torch.cat([init_image[:1].cpu(), x_samples_ddim.cpu()], dim=0)
                 else:
 
                     samples_ddim, _ = sampler.sample(S=ddim_steps,
-                                                     conditioning=c,
-                                                     batch_size=n_samples_per_class,
-                                                     shape=[3, 64, 64],
-                                                     verbose=False,
-                                                     unconditional_guidance_scale=scale,
-                                                     unconditional_conditioning=uc,
-                                                     eta=ddim_eta)
+                                                    conditioning=c,
+                                                    batch_size=n_samples_per_class,
+                                                    shape=[3, 64, 64],
+                                                    verbose=False,
+                                                    unconditional_guidance_scale=scale,
+                                                    unconditional_conditioning=uc,
+                                                    eta=ddim_eta)
 
                     x_samples_ddim = model.decode_first_stage(samples_ddim)
                     x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0,
-                                                 min=0.0, max=1.0)
+                                                min=0.0, max=1.0)
                     cat_samples = x_samples_ddim
 
                 all_samples.append(cat_samples)
                 all_probs.append(prob) if ccdddim and prob is not None else None
                 all_videos.append(vid) if ccdddim and vid is not None else None
                 all_masks.append(mask) if ccdddim and mask is not None else None
+
             tac = time.time()
 
 

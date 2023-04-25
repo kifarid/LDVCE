@@ -45,7 +45,9 @@ os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wand
 WANDB_ENTITY = "kifarid"
 WANDB_ENABLED = False
 
-torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
+if "faridk" == LMB_USERNAME:
+    torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
+
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
     lines = f.read().splitlines()
@@ -122,7 +124,6 @@ def main(cfg : DictConfig) -> None:
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
 
-    torch.autograd.set_detect_anomaly(False)
     ddim_steps = cfg.ddim_steps
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance
