@@ -538,7 +538,7 @@ class CCDDIMSampler(object):
 class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
-                 enforce_same_norms=True, seg_model=None, masked_guidance=False,
+                 enforce_same_norms=True, seg_model=None, detect_model=None, masked_guidance=False,
                  backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., **kwargs):
 
         super().__init__()
@@ -566,7 +566,8 @@ class CCMDDIMSampler(object):
         self.init_images = None
         self.init_labels = None            
         self.mask = None
-
+        
+        self.detect_model = detect_model
         self.classification_criterion = torch.nn.CrossEntropyLoss()
         
         self.dino_pipeline = False
@@ -1119,7 +1120,7 @@ class CCMDDIMSampler(object):
         out = {}
         out['x_dec'] = x_dec
         out['video'] = torch.stack(self.images, dim=0) if len(self.images) != 0 else None
-        out["mask"] = self.mask if self.mask is not None else None
+        out["mask"] = self.mask.to(torch.float32) if self.mask is not None else None
         # print(f"Video shape: {out['video'].shape}")
         out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
         self.images = []

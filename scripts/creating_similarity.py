@@ -13,8 +13,6 @@ with open("data/imagenette2/synset_human.txt", "r") as f:
 with open('data/synset_closest_idx.yaml', 'r') as file:
     synset_closest_idx = yaml.safe_load(file)
 
-import yaml 
-
 with open('data/index_synset.yaml', 'r') as file:
     index_synset = yaml.safe_load(file)
 
@@ -34,6 +32,8 @@ def get_sim_synset(synset_id_1, synset_id_2):
 #get the closest two words for each synset
 synset_closest_syn = defaultdict(list)
 synset_closest_idx = defaultdict(list)
+synet_closest_hum = defaultdict(list)
+
 for k, v in index_synset.items():
     print(k, v)
     similarity_scores = []
@@ -46,17 +46,24 @@ for k, v in index_synset.items():
     # sort the similarity scores in ascending order
     similarity_scores.sort(key=lambda x: x[1], reverse=True)
     
-    # add the closest two keys to the list for this synset
-    closest_keys = [x[0] for x in similarity_scores[:2]]
+    # add the closest five keys to the list for this synset
+    closest_keys = [x[0] for x in similarity_scores[:5]]
+    print("closest keys", closest_keys)
     synset_closest_syn[v] = closest_keys
     synset_closest_idx[k] = [synset_index[x] for x in closest_keys]
+    synet_closest_hum[synset_human[v]] = [synset_human[x] for x in closest_keys]
     print(k, [synset_index[x] for x in closest_keys])
+    print(synet_closest_hum[synset_human[v]], synset_human[v])
+    #print(synset_human[v], [synset_human[x] for x in closest_keys])
+
     #break 
 
 #save synset_closest_syn and synset_closest_idx to yaml file
 with open('data/synset_closest_syn.yaml', 'w') as file:
-
     documents = yaml.dump(dict(synset_closest_syn), file)
 
 with open('data/synset_closest_idx.yaml', 'w') as file:
     documents = yaml.dump(dict(synset_closest_idx), file)
+
+with open('data/synset_closest_hum.yaml', 'w') as file:
+    documents = yaml.dump(dict(synet_closest_hum), file)

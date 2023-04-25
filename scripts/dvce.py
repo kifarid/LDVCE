@@ -2,6 +2,7 @@ import argparse
 import os
 import yaml
 import copy
+import random
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -36,9 +37,11 @@ os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
 os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
+
 WANDB_ENTITY = "kifarid"
 WANDB_ENABLED = True
 
+torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
     lines = f.read().splitlines()
@@ -55,7 +58,7 @@ def main(cfg : DictConfig) -> None:
     config = {}
     config.update(OmegaConf.to_container(cfg, resolve=True))
 
-    run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="enabled" if WANDB_ENABLED else "disabled")
+    run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="online" if WANDB_ENABLED else "offline")
     device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
     #device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
     print(f"using device: {device}")
@@ -65,7 +68,7 @@ def main(cfg : DictConfig) -> None:
         if cfg.seg_model.name == "clipseg":
             model_seg = CLIPDensePredT(version=cfg.seg_model.version, reduce_dim=64) #int(cfg.seg_model.version.split('/')[-1]
             model_seg.eval()
-            model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False)
+            model_seg.load_state_dict(torch.load(cfg.seg_model.path, map_location=torch.device('cpu')), strict=False).to(device)
         else:
             detect_model = load_model_hf(repo_id=cfg.seg_model.dino.repo_id, filename= cfg.seg_model.dino.filename, dir = cfg.seg_model.dino.dir, ckpt_config_filename = cfg.seg_model.dino.ckpt_config_filename, device=device)
             sam_checkpoint = os.path.join(cfg.pretrained_models_dir, 'sam_vit_h_4b8939.pth')
@@ -88,7 +91,7 @@ def main(cfg : DictConfig) -> None:
     elif cfg.seg_model.name == "clipseg":
         sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, **cfg.sampler)
     else:
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg.to(device), detect_model = detect_model.to(device), **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, detect_model = detect_model, **cfg.sampler)
 
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
@@ -123,6 +126,8 @@ def main(cfg : DictConfig) -> None:
         label = label.squeeze().to(device).item()
 
         tgt_classes = synset_closest_idx[label]
+        #shuffle tgt_classes
+        random.shuffle(tgt_classes)
         print(f"converting {i} from : {i2h[label]} to: {[i2h[tgt_class] for tgt_class in tgt_classes]}")
         init_image = image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
