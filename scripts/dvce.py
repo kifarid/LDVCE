@@ -42,6 +42,10 @@ os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
 
+os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
+os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
+os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
+
 WANDB_ENTITY = "kifarid"
 WANDB_ENABLED = False
 
@@ -95,6 +99,11 @@ class ImageNet(datasets.ImageFolder):
         self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
         self.targets = np.array(self.samples)[:, 1]
 
+def set_seed(seed: int = 0):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 @hydra.main(version_base=None, config_path="../configs/dvce", config_name="v4")
 def main(cfg : DictConfig) -> None:    
@@ -165,6 +174,9 @@ def main(cfg : DictConfig) -> None:
     #for i, sample in enumerate(dataset, 1000):
     #    image, label = dataset[i]
     for i, batch in enumerate(data_loader):
+
+        set_seed(seed=cfg.seed if "seed" in cfg else 0)
+
         image, label = batch
         image = image.squeeze().to(device)
         label = label.squeeze().to(device).item()
