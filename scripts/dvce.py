@@ -37,14 +37,17 @@ from imagenet_classnames import name_map, folder_label_map
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
 LMB_USERNAME = "faridk"
+#check if directories exist
+os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
+os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
+os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
+
 os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
 os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
 
 WANDB_ENTITY = "kifarid"
-WANDB_ENABLED = False
-
 torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
@@ -99,9 +102,8 @@ def main(cfg : DictConfig) -> None:
     # load model
     config = {}
     config.update(OmegaConf.to_container(cfg, resolve=True))
-
-    run = wandb.init(entity=WANDB_ENTITY, project="cdiff", dir = os.environ['WANDB_DATA_DIR'], config=config, mode="online" if WANDB_ENABLED else "offline")
-    device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+    run = wandb.init(entity=WANDB_ENTITY, project="cdiff", config=config, mode="online" if cfg.wandb.enabled else "offline") # dir = os.environ['WANDB_DATA_DIR']
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
     print(f"using device: {device}")
 
@@ -140,6 +142,7 @@ def main(cfg : DictConfig) -> None:
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
     t_enc = int(strength * ddim_steps)
     n_samples_per_class = cfg.n_samples_per_class
+    batch_size = cfg.batch_size
     #precision = "autocast" #"full"
     #precision_scope = autocast if precision == "autocast" else nullcontext
       
@@ -155,35 +158,39 @@ def main(cfg : DictConfig) -> None:
     #dataset = datasets.ImageFolder(data_path,  transform=transform)
     dataset = ImageNet(data_path, transform=transform)
     print("dataset length: ", len(dataset))
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
         
-    my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video", "mask"])
-    
+    #my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video", "mask"])
+    my_table = wandb.Table(columns = ["image", "source", "target", "gen_image",  "class_pred", "closness_1", "closness_2", "video"])
     #for i, sample in enumerate(dataset, 1000):
     #    image, label = dataset[i]
     for i, batch in enumerate(data_loader):
         image, label = batch
         image = image.squeeze().to(device)
-        label = label.squeeze().to(device).item()
+        label = label.squeeze().to(device) #.item()
 
-        tgt_classes = synset_closest_idx[label]
+        #tgt_classes = synset_closest_idx[label]
+        tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
         #shuffle tgt_classes
-        random.shuffle(tgt_classes)
-        print(f"converting {i} from : {i2h[label]} to: {[i2h[tgt_class] for tgt_class in tgt_classes]}")
-        init_image = image.repeat(n_samples_per_class, 1, 1, 1).to(device)
+        #random.shuffle(tgt_classes)
+        for j, l in enumerate(label):
+            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
+        
+
+        init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
-        sampler.init_labels = n_samples_per_class * [label]
+        sampler.init_labels = label # n_samples_per_class * [label]
         if isinstance(cfg.sampler.lp_custom, str) and "dino_" in cfg.sampler.lp_custom:
             if device != next(sampler.distance_criterion.dino.parameters()).device:
                 sampler.distance_criterion.dino = sampler.distance_criterion.dino.to(device)
             sampler.dino_init_features = sampler.get_dino_features(sampler.init_images, device=device).clone()
-        mapped_image = _unmap_img(init_image)
+        #mapped_image = _unmap_img(init_image)
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
-        out = generate_samples(model, sampler, tgt_classes, n_samples_per_class, ddim_steps, scale, init_latent=init_latent.to(device),
+        out = generate_samples(model, sampler, tgt_classes, ddim_steps, scale, init_latent=init_latent.to(device),
                                t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
 
         all_samples = out["samples"]
@@ -192,29 +199,33 @@ def main(cfg : DictConfig) -> None:
         all_masks = out["masks"] 
 
         # Loop through your data and update the table incrementally
-        for j in range(len(all_probs)):
+        for j in range(batch_size):
             # Generate data for the current row
-            src_image = copy.deepcopy(all_samples[j][0])
+            src_image = copy.deepcopy(sampler.init_images[j]) #all_samples[j][0])
             src_image = wandb.Image(src_image)
-            gen_images = []
-            for k in range(n_samples_per_class):
-                gen_image = copy.deepcopy(all_samples[j][k + 1])
-                gen_images.append(wandb.Image(gen_image))
-                
-            class_prediction = copy.deepcopy(all_probs[j])
-            source = i2h[label]
-            target = i2h[tgt_classes[j]]
+            # gen_images = []
+            # for k in range(n_samples_per_class):
+            #     gen_image = copy.deepcopy(all_samples[j][k + 1])
+            #     gen_images.append(wandb.Image(gen_image))
 
-            diff =  (init_image - all_samples[j][1:])
+            gen_image = wandb.Image(copy.deepcopy(all_samples[0][j]))
+                
+            class_prediction = copy.deepcopy(all_probs[0][j])  # all_probs[j]
+            source = i2h[label[j].item()]
+            target = i2h[tgt_classes[j].item()]
+
+            #diff =  (init_image - all_samples[j][1:])
+            diff = sampler.init_images[j]-all_samples[0][j]   
             diff = diff.view(diff.shape[0], -1)
             lp1 = int(torch.norm(diff, p=1, dim=-1).mean().cpu().numpy())
             lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            video = wandb.Video((255. * all_videos[j]).to(torch.uint8).cpu(), fps=10, format="gif")
+            video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
             mask = wandb.Image(all_masks[j]) if all_masks is not None else None
             #print("added data to table")
-            my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
+            #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
+            my_table.add_data(src_image, source, target, gen_image, class_prediction, lp1, lp2, video)
 
         if i % 2 == 0:
             print(f"logging {i} with {len(my_table.data)} rows")
