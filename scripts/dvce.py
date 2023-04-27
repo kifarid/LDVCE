@@ -47,8 +47,15 @@ os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
 os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
 os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
 
+os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
+os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
+os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
+
 WANDB_ENTITY = "kifarid"
-torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
+
+if "faridk" == LMB_USERNAME:
+    torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
+
 i2h = dict()
 with open('data/imagenet_clsidx_to_label.txt', "r") as f:
     lines = f.read().splitlines()
@@ -96,6 +103,11 @@ class ImageNet(datasets.ImageFolder):
         self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
         self.targets = np.array(self.samples)[:, 1]
 
+def set_seed(seed: int = 0):
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.cuda.manual_seed_all(seed)
 
 @hydra.main(version_base=None, config_path="../configs/dvce", config_name="v4")
 def main(cfg : DictConfig) -> None:    
@@ -124,7 +136,6 @@ def main(cfg : DictConfig) -> None:
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
 
-    torch.autograd.set_detect_anomaly(False)
     ddim_steps = cfg.ddim_steps
     ddim_eta = cfg.ddim_eta
     scale = cfg.scale #for unconditional guidance
@@ -167,6 +178,9 @@ def main(cfg : DictConfig) -> None:
     #for i, sample in enumerate(dataset, 1000):
     #    image, label = dataset[i]
     for i, batch in enumerate(data_loader):
+
+        set_seed(seed=cfg.seed if "seed" in cfg else 0)
+
         image, label = batch
         image = image.squeeze().to(device)
         label = label.squeeze().to(device) #.item()
@@ -201,14 +215,14 @@ def main(cfg : DictConfig) -> None:
         # Loop through your data and update the table incrementally
         for j in range(batch_size):
             # Generate data for the current row
-            src_image = copy.deepcopy(sampler.init_images[j]) #all_samples[j][0])
+            src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
             src_image = wandb.Image(src_image)
             # gen_images = []
             # for k in range(n_samples_per_class):
             #     gen_image = copy.deepcopy(all_samples[j][k + 1])
             #     gen_images.append(wandb.Image(gen_image))
 
-            gen_image = wandb.Image(copy.deepcopy(all_samples[0][j]))
+            gen_image = wandb.Image(copy.deepcopy(all_samples[0][j].cpu()))
                 
             class_prediction = copy.deepcopy(all_probs[0][j])  # all_probs[j]
             source = i2h[label[j].item()]

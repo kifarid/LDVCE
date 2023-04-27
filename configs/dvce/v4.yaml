@@ -13,6 +13,7 @@ scale: 2.85
 ddim_steps: 500
 ddim_eta: 0.
 latent_t_0: True
+seed: 0
 
 sampler:
   enforce_same_norms: True
