@@ -5,6 +5,7 @@ import torchvision
 from torch.utils.data import Dataset
 import torchmetrics
 from PIL import Image
+import timm
 
 imagenet_mean = (0.485, 0.456, 0.406),
 iamgenet_std = (0.229, 0.224, 0.225),
@@ -40,6 +41,7 @@ class ImageFolder(Dataset):
 
 @torch.inference_mode()
 def evaluate(model: torch.nn.Module, data_loader) -> float:
+    model.eval()
     device = next(model.parameters()).device
     acc = torchmetrics.Accuracy(num_classes=1000)
     for input, target in data_loader:
@@ -55,10 +57,15 @@ if __name__ == "__main__":
     parser.add_argument('--cf_dir', required=True, type=str)
     parser.add_argument('--model', required=True, type=str, default="resnet50")
     parser.add_argument('--save_dir', required=True, type=str)
+    parser.add_argument("--timm", action="store_true")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = getattr(torchvision.models, args.model)(pretrained=True).to(device)
+
+    if args.timm:
+        model = timm.create_model(args.model, pretrained=True, in_chans=3).to(device)
+    else:
+        model = getattr(torchvision.models, args.model)(pretrained=True).to(device)
 
     dataset = ImageFolder(root=args.cf_dir, transform=imagenet_transform)
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=1, shuffle=False, num_workers=1)
