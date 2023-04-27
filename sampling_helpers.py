@@ -241,7 +241,78 @@ def disabled_train(self, mode=True):
     return self
 
 
-def generate_samples(model, sampler, classes, n_samples_per_class, ddim_steps, scale, init_image=None, t_enc=None,
+
+def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None, t_enc=None,
+                     init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True):
+    all_samples = []
+    all_probs = []
+    all_videos = []
+    all_masks = []
+
+    with torch.no_grad():
+        with model.ema_scope():
+            tic = time.time()
+            bs = classes.shape[0]
+            uc = model.get_learned_conditioning(
+                {model.cond_stage_key: torch.tensor(bs * [1000]).to(model.device)})
+                
+            print(f"rendering classes '{classes}' in {ddim_steps} steps and using s={scale:.2f}.")
+            xc = classes
+            c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
+            if init_latent is not None:
+
+                z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (bs)).to(
+                    init_latent.device)) if not latent_t_0 else init_latent
+
+                # decode it
+                if ccdddim:
+                    out = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
+                                            unconditional_conditioning=uc, y=xc.to(model.device), latent_t_0=latent_t_0)
+                    samples = out["x_dec"]
+                    prob = out["prob"]
+                    vid = out["video"]
+                    mask = out["mask"]
+
+                else:
+                    samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
+                                                unconditional_conditioning=uc)
+
+                x_samples = model.decode_first_stage(samples)
+                x_samples_ddim = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+                cat_samples = x_samples_ddim #torch.cat([init_image[:1], x_samples_ddim], dim=0)
+            else:
+
+                samples_ddim, _ = sampler.sample(S=ddim_steps,
+                                                    conditioning=c,
+                                                    batch_size=n_samples_per_class,
+                                                    shape=[3, 64, 64],
+                                                    verbose=False,
+                                                    unconditional_guidance_scale=scale,
+                                                    unconditional_conditioning=uc,
+                                                    eta=ddim_eta)
+
+                x_samples_ddim = model.decode_first_stage(samples_ddim)
+                x_samples_ddim = torch.clamp((x_samples_ddim + 1.0) / 2.0,
+                                                min=0.0, max=1.0)
+                cat_samples = x_samples_ddim
+
+            all_samples.append(cat_samples)
+            all_probs.append(prob) if ccdddim and prob is not None else None
+            all_videos.append(vid) if ccdddim and vid is not None else None
+            all_masks.append(mask) if ccdddim and mask is not None else None
+        tac = time.time()
+
+
+    out = {}
+    out["samples"] = all_samples
+    out["probs"] = all_probs if len(all_probs) > 0 else None
+    out["videos"] = all_videos if len(all_videos) > 0 else None
+    out["masks"] = all_masks if len(all_masks) > 0 else None
+    
+    return out
+
+
+def generate_samples_one_to_many(model, sampler, classes, n_samples_per_class, ddim_steps, scale, init_image=None, t_enc=None,
                      init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True):
     all_samples = []
     all_probs = []

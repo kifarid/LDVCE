@@ -603,7 +603,7 @@ class CCMDDIMSampler(object):
         x = tf.center_crop(x, 224)
         x = normalize(_map_img(x))
         logit = self.classifier(x)  # (TODO) add option for t here
-        dist = torchd.independent.Independent(OneHotDist(logit, validate_args = False), 1)
+        dist = torchd.independent.Independent(OneHotDist(logit, validate_args = False), 0) # 0 here is the batch dimension, so event_shape is (num_classes, )
         return dist
 
     def get_classifier_logits(self, x, t=None):
@@ -764,7 +764,7 @@ class CCMDDIMSampler(object):
                     pred_logits = self.get_classifier_logits(pred_x0)
                     log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
                     log_probs = log_probs[range(log_probs.size(0)), y.view(-1)]
-                    prob_best_class = torch.exp(log_probs).mean().detach()
+                    prob_best_class = torch.exp(log_probs).detach()
 
                     if self.log_backprop_gradients: pred_latent_x0.retain_grad()
 
@@ -801,11 +801,11 @@ class CCMDDIMSampler(object):
                             e_t_uncond, e_t, pred_x0 = ret_vals
                         pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
                         lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
-                    else:
+                        lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+                    elif self.lp_custom:
                         pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
                         lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
-                
-                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+                        lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
 
         # assert e_t_uncond.requires_grad == True and e_t.requires_grad == True, "e_t_uncond and e_t should require gradients"
 
@@ -858,7 +858,7 @@ class CCMDDIMSampler(object):
         # adding images to create a gif
         pred_x0_copy = pred_x0.clone().detach()
         img = torch.clamp(_map_img(pred_x0_copy), min=0.0, max=1.0)
-        img = torch.permute(img, (1, 2, 0, 3)).reshape((img.shape[1], img.shape[2], -1))
+        #img = torch.permute(img, (1, 2, 0, 3)).reshape((img.shape[1], img.shape[2], -1))
 
         self.images.append(img.cpu())
 
@@ -1121,10 +1121,11 @@ class CCMDDIMSampler(object):
 
         out = {}
         out['x_dec'] = x_dec
-        out['video'] = torch.stack(self.images, dim=0) if len(self.images) != 0 else None
+        out['video'] = torch.stack(self.images, dim=1) if len(self.images) != 0 else None
         out["mask"] = self.mask.to(torch.float32) if self.mask is not None else None
         # print(f"Video shape: {out['video'].shape}")
-        out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
+        #out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
+        out['prob'] = self.probs[-1].detach().cpu().numpy() if len(self.probs) != 0 else None
         self.images = []
         self.probs = []
         self.mask = None

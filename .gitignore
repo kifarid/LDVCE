@@ -9,6 +9,7 @@ ldm/__
 latent_diffusion.egg-info
 cdiff copy*
 
+artifacts/*
 scripts/models/ldm/cin256-v2/model.ckpt
 models/ldm/cin256-v2
 models/ldm/cin256-v2/model.ckpt
