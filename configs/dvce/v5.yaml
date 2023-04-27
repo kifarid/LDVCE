@@ -1,5 +1,3 @@
-data_path: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
-
 diffusion_model:
   cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
   ckpt_path: "models/ldm/cin256-v2/model.ckpt"
@@ -10,11 +8,21 @@ classifier_model:
 
 
 n_samples_per_class: #2
-batch_size: 2
 strength: 0.01 #0.3 #28 #0.25
 scale: 2.85
 ddim_steps: 500
 ddim_eta: 0.
+
+data:
+  _target_: scripts.dvce.ImageNet
+  root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+  idx_to_tgt_cls_path: 'data/image_idx_to_tgt_class_closest_5.yaml'
+  split: 'val'
+  return_tgt_cls: True
+  batch_size: 2
+
+
+ 
 
 sampler:
   enforce_same_norms: True
@@ -26,4 +34,4 @@ sampler:
   lp_custom: 1
 
 wandb:
-  enabled: True
+  enabled: False

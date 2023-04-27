@@ -16,6 +16,7 @@ from torch import autocast
 
 from omegaconf import OmegaConf
 import hydra
+from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 import wandb
 import torchvision
@@ -78,6 +79,8 @@ class ImageNet(datasets.ImageFolder):
             class_idcs=None, 
             start_sample: int = 0, 
             end_sample: int = 50000//1000,
+            return_tgt_cls: bool = False,
+            idx_to_tgt_cls_path = None, 
             **kwargs
     ):
         _ = kwargs  # Just for consistency with other datasets.
@@ -85,23 +88,51 @@ class ImageNet(datasets.ImageFolder):
         assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
         path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
         super().__init__(path, transform=transform, target_transform=target_transform)
+        
+        with open(idx_to_tgt_cls_path, 'r') as file:
+            idx_to_tgt_cls = yaml.safe_load(file)
+            if isinstance(idx_to_tgt_cls, dict):
+                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
+        self.idx_to_tgt_cls = idx_to_tgt_cls
+
+        self.return_tgt_cls = return_tgt_cls
+
         if class_idcs is not None:
             class_idcs = list(sorted(class_idcs))
             tgt_to_tgt_map = {c: i for i, c in enumerate(class_idcs)}
             self.classes = [self.classes[c] for c in class_idcs]
-            self.samples = [(p, tgt_to_tgt_map[t]) for p, t in self.samples if t in tgt_to_tgt_map]
+            samples = []
+            idx_to_tgt_cls = []
+            for i, (p, t) in enumerate(self.samples):
+                if t in tgt_to_tgt_map:
+                    samples.append((p, tgt_to_tgt_map[t]))
+                    idx_to_tgt_cls.append(self.idx_to_tgt_cls[i])
+            
+            self.idx_to_tgt_cls = idx_to_tgt_cls
+            #self.samples = [(p, tgt_to_tgt_map[t]) for i, (p, t) in enumerate(self.samples) if t in tgt_to_tgt_map]
             self.class_to_idx = {k: tgt_to_tgt_map[v] for k, v in self.class_to_idx.items() if v in tgt_to_tgt_map}
 
         if "val" == split: # reorder
             new_samples = []
+            idx_to_tgt_cls = []
             for idx in range(50000//1000):
                 new_samples.extend(self.samples[idx::50000//1000])
+                idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
             self.samples = new_samples[start_sample*1000:end_sample*1000]
+            self.idx_to_tgt_cls = idx_to_tgt_cls[start_sample*1000:end_sample*1000]
+
         else:
             raise NotImplementedError
 
         self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
         self.targets = np.array(self.samples)[:, 1]
+    
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+        if self.return_tgt_cls:
+            return *sample, self.idx_to_tgt_cls[index]
+        else:
+            return sample
 
 def set_seed(seed: int = 0):
     torch.manual_seed(seed)
@@ -153,13 +184,13 @@ def main(cfg : DictConfig) -> None:
     assert 0. <= strength <= 1., 'can only work with strength in [0.0, 1.0]'
     t_enc = int(strength * ddim_steps)
     n_samples_per_class = cfg.n_samples_per_class
-    batch_size = cfg.batch_size
+    batch_size = cfg.data.batch_size
     #precision = "autocast" #"full"
     #precision_scope = autocast if precision == "autocast" else nullcontext
       
     print(config)
 
-    data_path = cfg.data_path
+    #data_path = cfg.data_path
     out_size = 256
     transform_list = [
         transforms.Resize((out_size, out_size)),
@@ -167,11 +198,14 @@ def main(cfg : DictConfig) -> None:
     ]
     transform = transforms.Compose(transform_list)
     #dataset = datasets.ImageFolder(data_path,  transform=transform)
-    dataset = ImageNet(data_path, transform=transform)
+    #dataset = ImageNet(data_path, transform=transform)
+    dataset = instantiate(cfg.data, transform=transform)
     print("dataset length: ", len(dataset))
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
+
+    
         
     #my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video", "mask"])
     my_table = wandb.Table(columns = ["image", "source", "target", "gen_image",  "class_pred", "closness_1", "closness_2", "video"])
@@ -181,12 +215,18 @@ def main(cfg : DictConfig) -> None:
 
         set_seed(seed=cfg.seed if "seed" in cfg else 0)
 
-        image, label = batch
+        if cfg.data.return_tgt_cls:
+            image, label, tgt_classes = batch
+            tgt_classes = tgt_classes.squeeze().to(device)
+        else:
+            image, label = batch
+            tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
+
         image = image.squeeze().to(device)
         label = label.squeeze().to(device) #.item()
-
+        #tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
         #tgt_classes = synset_closest_idx[label]
-        tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
+        #tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
         #shuffle tgt_classes
         #random.shuffle(tgt_classes)
         for j, l in enumerate(label):
