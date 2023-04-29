@@ -33,7 +33,7 @@ import regex as re
 from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
-from imagenet_classnames import name_map, folder_label_map
+from data.imagenet_classnames import name_map, folder_label_map
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
