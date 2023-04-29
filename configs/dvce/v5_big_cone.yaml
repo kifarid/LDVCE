@@ -4,11 +4,11 @@ diffusion_model:
 
 seg_model:
 classifier_model:
-  name: "efficientnet_b0"
+  name: "convnext_base"
 
 
 n_samples_per_class: #2
-strength: 0.36 #0.3 #28 #0.25
+strength: 0.8 #0.3 #28 #0.25
 scale: 2.85
 ddim_steps: 375 
 ddim_eta: 0.
@@ -20,7 +20,7 @@ data:
   idx_to_tgt_cls_path: 'data/image_idx_to_tgt_class_closest_5.yaml'
   split: 'val'
   return_tgt_cls: True
-  batch_size: 2
+  batch_size: 1
 
 
  
@@ -33,7 +33,7 @@ sampler:
   masked_guidance: False
   backprop_diffusion: True   
   lp_custom: 1
-  deg_cone_projection: 30.
+  deg_cone_projection: 45.
 
 wandb:
   enabled: True

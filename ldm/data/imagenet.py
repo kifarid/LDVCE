@@ -15,7 +15,7 @@ from taming.data.imagenet import str_to_indices, give_synsets_from_indices, down
 from taming.data.imagenet import ImagePaths
 
 from ldm.modules.image_degradation import degradation_fn_bsr, degradation_fn_bsr_light
-
+from imagenet_classnames import name_map, folder_label_map
 
 def synset2idx(path_to_yaml="data/index_synset.yaml"):
     with open(path_to_yaml) as f:
@@ -392,3 +392,72 @@ class ImageNetSRValidation(ImageNetSR):
             indices = pickle.load(f)
         dset = ImageNetValidation(process_images=False,)
         return Subset(dset, indices)
+
+
+class ImageNetBalanced(datasets.ImageFolder):
+    classes = [name_map[i] for i in range(1000)]
+    name_map = name_map
+
+    def __init__(
+            self, 
+            root:str, 
+            split:str="val", 
+            transform=None, 
+            target_transform=None, 
+            class_idcs=None, 
+            start_sample: int = 0, 
+            end_sample: int = 50000//1000,
+            return_tgt_cls: bool = False,
+            idx_to_tgt_cls_path = None, 
+            **kwargs
+    ):
+        _ = kwargs  # Just for consistency with other datasets.
+        assert split in ["train", "val"]
+        assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
+        path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
+        super().__init__(path, transform=transform, target_transform=target_transform)
+        
+        with open(idx_to_tgt_cls_path, 'r') as file:
+            idx_to_tgt_cls = yaml.safe_load(file)
+            if isinstance(idx_to_tgt_cls, dict):
+                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
+        self.idx_to_tgt_cls = idx_to_tgt_cls
+
+        self.return_tgt_cls = return_tgt_cls
+
+        if class_idcs is not None:
+            class_idcs = list(sorted(class_idcs))
+            tgt_to_tgt_map = {c: i for i, c in enumerate(class_idcs)}
+            self.classes = [self.classes[c] for c in class_idcs]
+            samples = []
+            idx_to_tgt_cls = []
+            for i, (p, t) in enumerate(self.samples):
+                if t in tgt_to_tgt_map:
+                    samples.append((p, tgt_to_tgt_map[t]))
+                    idx_to_tgt_cls.append(self.idx_to_tgt_cls[i])
+            
+            self.idx_to_tgt_cls = idx_to_tgt_cls
+            #self.samples = [(p, tgt_to_tgt_map[t]) for i, (p, t) in enumerate(self.samples) if t in tgt_to_tgt_map]
+            self.class_to_idx = {k: tgt_to_tgt_map[v] for k, v in self.class_to_idx.items() if v in tgt_to_tgt_map}
+
+        if "val" == split: # reorder
+            new_samples = []
+            idx_to_tgt_cls = []
+            for idx in range(50000//1000):
+                new_samples.extend(self.samples[idx::50000//1000])
+                idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
+            self.samples = new_samples[start_sample*1000:end_sample*1000]
+            self.idx_to_tgt_cls = idx_to_tgt_cls[start_sample*1000:end_sample*1000]
+
+        else:
+            raise NotImplementedError
+
+        self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
+        self.targets = np.array(self.samples)[:, 1]
+    
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+        if self.return_tgt_cls:
+            return *sample, self.idx_to_tgt_cls[index]
+        else:
+            return sample

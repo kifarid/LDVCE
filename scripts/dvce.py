@@ -37,7 +37,7 @@ from imagenet_classnames import name_map, folder_label_map
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
-LMB_USERNAME = "faridk"
+LMB_USERNAME = os.getlogin()
 #check if directories exist
 os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
 os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
@@ -217,13 +217,13 @@ def main(cfg : DictConfig) -> None:
 
         if cfg.data.return_tgt_cls:
             image, label, tgt_classes = batch
-            tgt_classes = tgt_classes.squeeze().to(device)
+            tgt_classes = tgt_classes.to(device) #squeeze()
         else:
             image, label = batch
             tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
 
-        image = image.squeeze().to(device)
-        label = label.squeeze().to(device) #.item()
+        image = image.to(device) #squeeze()
+        label = label.to(device) #.item() #squeeze()
         #tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
         #tgt_classes = synset_closest_idx[label]
         #tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
@@ -281,7 +281,7 @@ def main(cfg : DictConfig) -> None:
             #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
             my_table.add_data(src_image, source, target, gen_image, class_prediction, lp1, lp2, video)
 
-        if i % 2 == 0:
+        if i % cfg.log_rate == 0:
             print(f"logging {i} with {len(my_table.data)} rows")
             table_name = f"dvce_video" #_{i}"
             run.log({table_name: copy.deepcopy(my_table)})

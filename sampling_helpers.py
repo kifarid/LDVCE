@@ -179,15 +179,21 @@ class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
         return sample
 
 
-def cone_project(grad_temp_1, grad_temp_2, deg):
+def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
+    # print('grad_temp_1', grad_temp_1.shape)
+    # print('grad_temp_2', grad_temp_2.shape)
+    # grad_temp_1_cloned = grad_temp_1.clone()
+    # grad_temp_2_cloned = grad_temp_2.clone()
+    # grad_temp_1 = grad_temp_1_cloned[:, :3]
+    # grad_temp_2 = grad_temp_2_cloned[:, :3]
     angles_before = torch.acos(
         (grad_temp_1 * grad_temp_2).sum(1) / (grad_temp_1.norm(p=2, dim=1) * grad_temp_2.norm(p=2, dim=1)))
-    ##print('angle before', angles_before)
+    #print('angle before', angles_before)
     grad_temp_2 /= grad_temp_2.norm(p=2, dim=1).view(grad_temp_1.shape[0], -1)
     grad_temp_1 = grad_temp_1 - ((grad_temp_1 * grad_temp_2).sum(1) / (grad_temp_2.norm(p=2, dim=1) ** 2)).view(
         grad_temp_1.shape[0], -1) * grad_temp_2
@@ -199,6 +205,9 @@ def cone_project(grad_temp_1, grad_temp_2, deg):
 
     # second classifier is a non-robust one -
     # unless we are less than 45 degrees away - don't cone project
+    #print(" ratio of dimensions that are cone projected: ", (angles_before > radians).float().mean())
+    #print("angle before", angles_before.mean(), angles_before.std(), angles_before.min(), angles_before.max())
+    #print("radians", radians)
     grad_temp = grad_temp_2.clone()
     loop_projecting = time.time()
     grad_temp[angles_before > radians] = cone_projection[angles_before > radians]

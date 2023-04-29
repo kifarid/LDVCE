@@ -74,6 +74,7 @@ def cone_project(grad_temp_1, grad_temp_2, deg):
 
     # second classifier is a non-robust one -
     # unless we are less than 45 degrees away - don't cone project
+    print(" ratio of dimensions that are cone projected: ", (angles_before > radians).float().mean())
     grad_temp = grad_temp_2.clone()
     loop_projecting = time.time()
     grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
@@ -206,6 +207,7 @@ class CCDDIMSampler(object):
                     log_probs = classifier_dist.log_prob(c)
                     grad_classifier = torch.autograd.grad(log_probs.sum(), pred_x0, retain_graph=True)[0] #TODO using sum instead of mean )
 
+                    print(f" cone projection: {self.guidance == 'projected'}, angle is {self.deg_cone_projection}}")
                     # project the gradient of the classifier on the implicit classifier
                     grad_class = cone_project(grad_implicit_classifier.view(pred_x0.shape[0], -1),
                                               grad_classifier.view(pred_x0.shape[0], -1),

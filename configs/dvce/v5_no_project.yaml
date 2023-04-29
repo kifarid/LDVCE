@@ -27,7 +27,7 @@ data:
 
 sampler:
   enforce_same_norms: True
-  guidance: "projected"
+  guidance: "non-projection"
   classifier_lambda: 1.8
   dist_lambda: 0.3
   masked_guidance: False

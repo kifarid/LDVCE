@@ -16,5 +16,5 @@ bash /misc/software/cuda/add_environment_cuda11.6.2-cudnn-8.4.1-ubuntu2004.sh
 WORKDIR="/misc/student/faridk/stable-diffusion"
 cd $WORKDIR
 echo "QSUB working on: ${WORKDIR}"
-python -m scripts.dvce --config-name=v5_big_cone
+python -m scripts.dvce --config-name=v5_no_project
 exit 0

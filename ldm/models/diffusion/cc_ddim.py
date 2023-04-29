@@ -257,6 +257,7 @@ class CCDDIMSampler(object):
                 renormalize(implicit_classifier_score * mask_guidance, implicit_classifier_score)[
                     0] if self.masked_guidance else implicit_classifier_score
             # project the gradient of the classifier on the implicit classifier
+            print(f" cone projection: {self.guidance == 'projected'}, angle is {self.deg_cone_projection}")
             classifier_score = cone_project(implicit_classifier_score.view(x.shape[0], -1),
                                             classifier_score.view(x.shape[0], -1),
                                             self.deg_cone_projection).view_as(classifier_score) \
