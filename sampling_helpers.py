@@ -182,12 +182,13 @@ class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
         return sample
 
 
-def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4):
+def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4, overwrite: str = "cone"):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
+    assert overwrite in ["cone", "zero"]
     # print('grad_temp_1', grad_temp_1.shape)
     # print('grad_temp_2', grad_temp_2.shape)
     # grad_temp_1_cloned = grad_temp_1.clone()
@@ -213,7 +214,12 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4):
     #print("radians", radians)
     grad_temp = grad_temp_2.clone()
     loop_projecting = time.time()
-    grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
+    if overwrite == "cone":
+        grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
+    elif overwrite == "zero":
+        grad_temp[angles_before > radians] = 0
+    else:
+        raise NotImplementedError
 
     return grad_temp
 
