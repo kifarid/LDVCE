@@ -19,6 +19,21 @@ try:
 except:
     print("WARNING: Run pip install grad-cam")
 
+def compute_mask_from_attribution(model: torch.nn.Module, layer: torch.nn.Module, inputs: torch.Tensor, source_indices: list, target_indices: list, percentile: int = 80):
+    model.zero_grad()
+    cam = AblationCAM(model=model, target_layers=[layer], use_cuda=True)
+    masks = []
+    for input, source_idx, target_idx in zip(inputs, source_indices, target_indices):
+        source_cam = cam(input_tensor=input.unsqueeze(0), targets=[ClassifierOutputTarget(source_idx)], aug_smooth=True, eigen_smooth=True)
+        source_threshold = np.percentile(source_cam.reshape(-1), percentile, axis=-1)
+        source_mask = source_cam > source_threshold
+        target_cam = cam(input_tensor=input.unsqueeze(0), targets=[ClassifierOutputTarget(target_idx)], aug_smooth=True, eigen_smooth=True)
+        target_threshold = np.percentile(target_cam.reshape(-1), percentile, axis=-1)
+        target_mask = target_cam > target_threshold
+        masks.append(np.logical_or(source_mask, target_mask)[0])
+    return np.array(masks)
+
+
 def reshape_transform(tensor, height=14, width=14):
     result = tensor[:, 1:, :].reshape(tensor.size(0),
                                       height, width, tensor.size(2))
@@ -33,11 +48,12 @@ def compute_gradcam(model, layer, input, cls_idx):
     #cam = GradCAM(model=model, target_layers=[layer], use_cuda=True)
     #cam = HiResCAM(model=model, target_layers=[layer], use_cuda=True)
     #cam = GradCAMPlusPlus(model=model, target_layers=[layer], use_cuda=True)
-    #cam = AblationCAM(model=model, target_layers=[layer], use_cuda=True)
-    cam = ScoreCAM(model=model, target_layers=[layer], use_cuda=True)
+    cam = AblationCAM(model=model, target_layers=[layer], use_cuda=True)
+    #cam = ScoreCAM(model=model, target_layers=[layer], use_cuda=True)
     #cam = EigenCAM(model=model, target_layers=[layer], use_cuda=True)
     targets = [ClassifierOutputTarget(cls_idx)]
-    grayscale_cam = cam(input_tensor=input, targets=targets, aug_smooth=True, eigen_smooth=True)
+    #grayscale_cam = cam(input_tensor=input, targets=targets, aug_smooth=True, eigen_smooth=True)
+    grayscale_cam = cam(input_tensor=input, targets=targets)
     return grayscale_cam
 
 def compute_guided_gradcam(model, layer, input, cls_idx):
@@ -94,16 +110,40 @@ if __name__ == "__main__":
     #vals = compute_lrp(model, input.unsqueeze(0), cls_idx=0)
     #vals = compute_gradcam(model, model.layer4[-1], input.unsqueeze(0), cls_idx=254)
     #vals = compute_gradcam(model, model.layer4[-1], input.unsqueeze(0), cls_idx=281)
-    vals = compute_gradcam(model, model.layer4[-1], input.unsqueeze(0), cls_idx=281)
+    #vals = compute_gradcam(model, model.layer4[-1], input.unsqueeze(0), cls_idx=254)
 
-    grayscale_cam = vals[0, :]
-    visualization = show_cam_on_image(np.array(img)/255, grayscale_cam, use_rgb=True)
-    viz = Image.fromarray(visualization)
-    viz.save("tmp.png")
+    # threshold = np.percentile(vals.reshape(-1), 80)
+    # vals[vals < threshold] = 0
+
+    # mask = grayscale_cam = vals[0, :]
+    # #visualization = show_cam_on_image(np.array(img)/255, grayscale_cam, use_rgb=True)
+    # use_rgb = True
+    # img = np.array(img)/255
+    # image_weight = 0.5
+    # colormap: int = cv2.COLORMAP_JET
+    # heatmap = cv2.applyColorMap(np.uint8(255 * mask), colormap)
+    # if use_rgb:
+    #     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
+    # heatmap = np.float32(heatmap) / 255
+
+    # if np.max(img) > 1:
+    #     raise Exception(
+    #         "The input image should np.float32 in the range [0, 1]")
+
+    # if image_weight < 0 or image_weight > 1:
+    #     raise Exception(
+    #         f"image_weight should be in the range [0, 1].\
+    #             Got: {image_weight}")
+
+    # cam = (1 - image_weight) * heatmap + image_weight * img
+    # cam = cam / np.max(cam)
+    # visualization = np.uint8(255 * cam)
+    # viz = Image.fromarray(visualization)
+    # viz.save("tmp.png")
 
 
-    #attr = np.transpose(vals.squeeze().cpu().detach().numpy(), (1, 2, 0))
-    attr = np.transpose(vals, (1, 2, 0))
+    # #attr = np.transpose(vals.squeeze().cpu().detach().numpy(), (1, 2, 0))
+    # attr = np.transpose(vals, (1, 2, 0))
     # norm_attr = _normalize_attr(attr, "all", 2, reduction_axis=2)
     # cmap = LinearSegmentedColormap.from_list(
     #     "RdWhGn", ["red", "white", "green"]
@@ -126,3 +166,11 @@ if __name__ == "__main__":
     # plt.axis("off")
     # plt.savefig("tmp.png")
     # plt.close()
+
+    masks = compute_mask_from_attribution(model, model.layer4[-1], input.unsqueeze(0), source_indices=[254], target_indices=[281])
+
+    plt.imshow(img)
+    plt.imshow(masks[0], cmap='gray', alpha=0.5)
+    plt.axis("off")
+    plt.savefig("tmp.png")
+    plt.close()
