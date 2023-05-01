@@ -188,7 +188,7 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4, overwrite: str =
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
-    assert overwrite in ["cone", "zero"]
+    assert overwrite in ["cone", "zero", "robust"]
     # print('grad_temp_1', grad_temp_1.shape)
     # print('grad_temp_2', grad_temp_2.shape)
     # grad_temp_1_cloned = grad_temp_1.clone()
@@ -218,6 +218,8 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4, overwrite: str =
         grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
     elif overwrite == "zero":
         grad_temp[angles_before > radians] = 0
+    elif overwrite == "robust":
+        grad_temp[angles_before > radians] = grad_temp_1[angles_before > radians]
     else:
         raise NotImplementedError
 

@@ -59,7 +59,9 @@ class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
         return sample
 
 
-def cone_project(grad_temp_1, grad_temp_2, deg):
+def cone_project(grad_temp_1, grad_temp_2, deg, overwrite: str = "cone"):
+    assert overwrite in ["cone", "zero", "robust"]
+
     angles_before = torch.acos(
         (grad_temp_1 * grad_temp_2).sum(1) / (grad_temp_1.norm(p=2, dim=1) * grad_temp_2.norm(p=2, dim=1)))
     ##print('angle before', angles_before)
@@ -70,14 +72,21 @@ def cone_project(grad_temp_1, grad_temp_2, deg):
     # cone_projection = grad_temp_1 + grad_temp_2 45 deg
     radians = torch.tensor([deg], device=grad_temp_1.device).deg2rad()
     ##print('angle after', radians, torch.acos((grad_temp_1*grad_temp_2).sum(1) / (grad_temp_1.norm(p=2,dim=1) * grad_temp_2.norm(p=2,dim=1))))
-    cone_projection = grad_temp_1 * torch.tan(radians) + grad_temp_2
 
     # second classifier is a non-robust one -
     # unless we are less than 45 degrees away - don't cone project
     print(" ratio of dimensions that are cone projected: ", (angles_before > radians).float().mean())
     grad_temp = grad_temp_2.clone()
     loop_projecting = time.time()
-    grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
+    if overwrite == "cone":
+        cone_projection = grad_temp_1 * torch.tan(radians) + grad_temp_2
+        grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
+    elif overwrite == "zero":
+        grad_temp[angles_before > radians] = 0
+    elif overwrite == "robust":
+        grad_temp[angles_before > radians] = grad_temp_1[angles_before > radians]
+    else:
+        raise NotImplementedError
 
     return grad_temp
 
