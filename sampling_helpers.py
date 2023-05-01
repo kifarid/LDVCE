@@ -205,7 +205,6 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4, overwrite: str =
     # cone_projection = grad_temp_1 + grad_temp_2 45 deg
     radians = torch.tensor([deg], device=grad_temp_1.device).deg2rad()
     ##print('angle after', radians, torch.acos((grad_temp_1*grad_temp_2).sum(1) / (grad_temp_1.norm(p=2,dim=1) * grad_temp_2.norm(p=2,dim=1))))
-    cone_projection = grad_temp_1 * torch.tan(radians) + grad_temp_2
 
     # second classifier is a non-robust one -
     # unless we are less than 45 degrees away - don't cone project
@@ -215,6 +214,7 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4, overwrite: str =
     grad_temp = grad_temp_2.clone()
     loop_projecting = time.time()
     if overwrite == "cone":
+        cone_projection = grad_temp_1 * torch.tan(radians) + grad_temp_2
         grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
     elif overwrite == "zero":
         grad_temp[angles_before > radians] = 0
