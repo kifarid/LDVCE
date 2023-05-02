@@ -13,17 +13,19 @@ import sys
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like, \
     extract_into_tensor
 from sampling_helpers import _map_img, normalize, renormalize, _renormalize_gradient, \
-    OneHotDist, compute_lp_dist, cone_project, segment, detect
+    OneHotDist, compute_lp_dist, cone_project, segment, detect, cone_project_chuncked, cone_project_chuncked_zero
+
+from data.imagenet_classnames import name_map
 
 
-i2h = dict()
-with open('data/imagenet_clsidx_to_label.txt', "r") as f:
-    lines = f.read().splitlines()
-    assert len(lines) == 1000
+i2h = name_map
+# with open('data/imagenet_clsidx_to_label.txt', "r") as f:
+#     lines = f.read().splitlines()
+#     assert len(lines) == 1000
 
-    for line in lines:
-        key, value = line.split(":")
-        i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip())  # value.strip().strip("'").strip(",").strip("\"")
+#     for line in lines:
+#         key, value = line.split(":")
+#         i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip())  # value.strip().strip("'").strip(",").strip("\"")
 
 class DinoLoss(torch.nn.Module):
     def __init__(self, dino: torch.nn.Module, loss_identifier: str) -> None:
@@ -316,6 +318,9 @@ class CCDDIMSampler(object):
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):
         self.ddim_timesteps = make_ddim_timesteps(ddim_discr_method=ddim_discretize, num_ddim_timesteps=ddim_num_steps,
                                                   num_ddpm_timesteps=self.ddpm_num_timesteps, verbose=verbose)
+        print("ddim_timesteps", self.ddim_timesteps)
+        exit()
+        
         alphas_cumprod = self.model.alphas_cumprod
         assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, 'alphas have to be defined for each timestep'
         to_torch = lambda x: x.clone().detach().to(torch.float32).to(self.model.device)
@@ -540,7 +545,7 @@ class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, detect_model=None, masked_guidance=False,
-                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., **kwargs):
+                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., cone_projection_type= 'default', self_recurrence=0, **kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -557,16 +562,19 @@ class CCMDDIMSampler(object):
         self.log_backprop_gradients = log_backprop_gradients
         # self.projected_counterfactuals = projected_counterfactuals
         self.deg_cone_projection = deg_cone_projection
+        self.cone_projection_type = cone_projection_type
         self.denoise_dist_input = denoise_dist_input
         self.dist_lambda = dist_lambda
         self.enforce_same_norms = enforce_same_norms
         self.seg_model = seg_model
         self.masked_guidance = masked_guidance
         self.mask_alpha = mask_alpha
+        self.self_recurrence = self_recurrence
 
         self.init_images = None
         self.init_labels = None            
         self.mask = None
+        self.concensus_regions = []
         
         self.detect_model = detect_model
         self.classification_criterion = torch.nn.CrossEntropyLoss()
@@ -791,22 +799,26 @@ class CCMDDIMSampler(object):
                         print(torch.norm(grad_classifier, dim=(2,3)), torch.norm(grad_pred_latent_x0, dim=(2,3)), torch.norm(grad_unet_wrt_zt, dim=(2,3)))
                         print(cossim_wpre)
 
-                    if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom: # retain_graph causes cuda oom issues for dino distance regularizer...
-                        x_noise = x.detach().requires_grad_()
-                        ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
-                                                                    use_original_steps, quantize_denoised=quantize_denoised,
-                                                                    return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
-                        if self.log_backprop_gradients:
-                            e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
-                        else:
-                            e_t_uncond, e_t, pred_x0 = ret_vals
-                        pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
-                        lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
-                        lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
-                    elif self.lp_custom:
-                        pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
-                        lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
-                        lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+            if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom: # retain_graph causes cuda oom issues for dino distance regularizer...
+                with torch.enable_grad():
+
+                    x_noise = x.detach().requires_grad_()
+                    ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
+                                                                use_original_steps, quantize_denoised=quantize_denoised,
+                                                                return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
+                    if self.log_backprop_gradients:
+                        e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
+                    else:
+                        e_t_uncond, e_t, pred_x0 = ret_vals
+                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
+                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+            
+            elif self.lp_custom:
+                with torch.enable_grad():
+                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
+                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
 
         # assert e_t_uncond.requires_grad == True and e_t.requires_grad == True, "e_t_uncond and e_t should require gradients"
 
@@ -823,11 +835,20 @@ class CCMDDIMSampler(object):
             classifier_score = -1 * grad_classifier * (1 - a_t).sqrt()
             assert classifier_score.requires_grad == False, "classifier_score requires grad"
             # project the gradient of the classifier on the implicit classifier
-            classifier_score = cone_project(implicit_classifier_score.view(x.shape[0], -1),
-                                            classifier_score.view(x.shape[0], -1),
-                                            self.deg_cone_projection).view_as(classifier_score) \
-                if self.guidance == "projected" else classifier_score
 
+
+            projection_fn = cone_project if self.cone_projection_type == "default" else cone_project_chuncked
+            projection_fn = cone_project_chuncked_zero if "zero" in self.cone_projection_type else projection_fn
+            
+            
+            proj_out = projection_fn(implicit_classifier_score.view(x.shape[0], -1),
+                                            classifier_score.view(x.shape[0], -1),
+                                            self.deg_cone_projection) \
+                if self.guidance == "projected" else classifier_score
+            
+            classifier_score = proj_out if self.cone_projection_type == "default" else proj_out[0].view_as(classifier_score)
+            concensus_region = proj_out[1].unsqueeze(1) if self.cone_projection_type == "binning" else None
+            #print(classifier_score.shape, concensus_region.shape)
             if self.enforce_same_norms:
                 score_, norm_ = _renormalize_gradient(classifier_score,
                                                       implicit_classifier_score)  # e_t_uncond (AWAREE!!)
@@ -862,7 +883,9 @@ class CCMDDIMSampler(object):
         #img = torch.permute(img, (1, 2, 0, 3)).reshape((img.shape[1], img.shape[2], -1))
 
         self.images.append(img.cpu())
-
+        if self.classifier_lambda != 0 and self.cone_projection_type == "binning":
+            self.concensus_regions.append((concensus_region).cpu())
+        
         if prob_best_class is not None:
             self.probs.append(prob_best_class.cpu())
 
@@ -879,6 +902,9 @@ class CCMDDIMSampler(object):
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):
         self.ddim_timesteps = make_ddim_timesteps(ddim_discr_method=ddim_discretize, num_ddim_timesteps=ddim_num_steps,
                                                   num_ddpm_timesteps=self.ddpm_num_timesteps, verbose=verbose)
+        #print("DDIM timesteps: ", self.ddim_timesteps, "with length: ", len(self.ddim_timesteps))
+        #print all input parameters
+        #print("DDIM parameters: ", self.ddim_timesteps, ddim_discretize, ddim_eta)
         alphas_cumprod = self.model.alphas_cumprod
         assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, 'alphas have to be defined for each timestep'
         to_torch = lambda x: x.clone().detach().to(torch.float32).to(self.model.device)
@@ -1109,10 +1135,13 @@ class CCMDDIMSampler(object):
                 img_orig = self.model.q_sample(x_latent.clone(), ts)
                 x_dec = img_orig * (1. - mask) + (mask) * x_dec
 
-            
             x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
-                                          unconditional_guidance_scale=unconditional_guidance_scale,
-                                          unconditional_conditioning=unconditional_conditioning, y=y)
+                                                unconditional_guidance_scale=unconditional_guidance_scale,
+                                            unconditional_conditioning=unconditional_conditioning, y=y)
+            for j in range(self.self_recurrence):
+                print("self recurrence")
+                x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps, unconditional_guidance_scale = 1)
+
             #workaround for long running time
             elapsed_time = time.time() - tic
             if elapsed_time > 6:
@@ -1127,7 +1156,11 @@ class CCMDDIMSampler(object):
         # print(f"Video shape: {out['video'].shape}")
         #out['prob'] = self.probs[-1].item() if len(self.probs) != 0 else None
         out['prob'] = self.probs[-1].detach().cpu().numpy() if len(self.probs) != 0 else None
+        out['concensus_regions'] = torch.stack(self.concensus_regions, dim=1) if len(self.concensus_regions) != 0 else None
+        #print(out['concensus_regions'].shape, (out["concensus_regions"]>200).to(torch.float32).mean())
         self.images = []
         self.probs = []
+        
+        self.concensus_regions = []
         self.mask = None
         return out

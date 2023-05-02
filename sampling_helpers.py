@@ -182,28 +182,19 @@ class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
         return sample
 
 
-def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4):
+def cone_project(grad_temp_1, grad_temp_2, deg,):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
-    # print('grad_temp_1', grad_temp_1.shape)
-    # print('grad_temp_2', grad_temp_2.shape)
-    # grad_temp_1_cloned = grad_temp_1.clone()
-    # grad_temp_2_cloned = grad_temp_2.clone()
-    # grad_temp_1 = grad_temp_1_cloned[:, :3]
-    # grad_temp_2 = grad_temp_2_cloned[:, :3]
     angles_before = torch.acos(
         (grad_temp_1 * grad_temp_2).sum(1) / (grad_temp_1.norm(p=2, dim=1) * grad_temp_2.norm(p=2, dim=1)))
-    #print('angle before', angles_before)
     grad_temp_2 /= grad_temp_2.norm(p=2, dim=1).view(grad_temp_1.shape[0], -1)
     grad_temp_1 = grad_temp_1 - ((grad_temp_1 * grad_temp_2).sum(1) / (grad_temp_2.norm(p=2, dim=1) ** 2)).view(
         grad_temp_1.shape[0], -1) * grad_temp_2
     grad_temp_1 /= grad_temp_1.norm(p=2, dim=1).view(grad_temp_1.shape[0], -1)
-    # cone_projection = grad_temp_1 + grad_temp_2 45 deg
     radians = torch.tensor([deg], device=grad_temp_1.device).deg2rad()
-    ##print('angle after', radians, torch.acos((grad_temp_1*grad_temp_2).sum(1) / (grad_temp_1.norm(p=2,dim=1) * grad_temp_2.norm(p=2,dim=1))))
     cone_projection = grad_temp_1 * torch.tan(radians) + grad_temp_2
 
     # second classifier is a non-robust one -
@@ -216,6 +207,107 @@ def cone_project(grad_temp_1, grad_temp_2, deg, chunk_size = 4):
     grad_temp[angles_before > radians] = cone_projection[angles_before > radians]
 
     return grad_temp
+
+
+def cone_project_chuncked(grad_temp_1, grad_temp_2, deg, chunk_size = 1):
+    """
+    grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
+    grad_temp_2: gradient of the loss w.r.t. the non-robust
+    projecting the robust/CF onto the non-robust
+    """
+    orig_shp = (grad_temp_1.shape[0], 3, int((grad_temp_1.shape[-1]//3)**(1/2) ), int((grad_temp_1.shape[-1]//3)**(1/2) ))
+    
+    grad_temp_1_chuncked = grad_temp_1.view(*orig_shp) \
+    .unfold(2, chunk_size, chunk_size) \
+    .unfold(3, chunk_size, chunk_size) \
+    .permute(0, 1, 4, 5, 2, 3) \
+    .reshape(orig_shp[0], -1, orig_shp[-2]//chunk_size, orig_shp[-1]//chunk_size) \
+    .permute(0, 2, 3, 1)
+    
+    grad_temp_2_chuncked = grad_temp_2.view(*orig_shp) \
+    .unfold(2, chunk_size, chunk_size) \
+    .unfold(3, chunk_size, chunk_size) \
+    .permute(0, 1, 4, 5, 2, 3) \
+    .reshape(orig_shp[0], -1, orig_shp[-2]//chunk_size, orig_shp[-1]//chunk_size) \
+    .permute(0, 2, 3, 1)
+   
+    angles_before_chuncked = torch.acos((grad_temp_1_chuncked * grad_temp_2_chuncked).sum(-1) / (grad_temp_1_chuncked.norm(p=2, dim=-1) * grad_temp_2_chuncked.norm(p=2, dim=-1)))
+    #print('angle before', angles_before_chuncked)
+    grad_temp_2_chuncked_norm = grad_temp_2_chuncked / grad_temp_2_chuncked.norm(p=2, dim=-1).view(grad_temp_1_chuncked.shape[0], grad_temp_1_chuncked.shape[1], grad_temp_1_chuncked.shape[1], -1)
+    #print(f" norm {grad_temp_2_chuncked_norm.norm(p=2, dim=-1) ** 2}")
+    grad_temp_1_chuncked = grad_temp_1_chuncked - ((grad_temp_1_chuncked * grad_temp_2_chuncked_norm).sum(-1) / (grad_temp_2_chuncked_norm.norm(p=2, dim=-1) ** 2)).view(
+         grad_temp_1_chuncked.shape[0], grad_temp_1_chuncked.shape[1], grad_temp_1_chuncked.shape[1], -1) * grad_temp_2_chuncked_norm
+
+    grad_temp_1_chuncked_norm = grad_temp_1_chuncked / grad_temp_1_chuncked.norm(p=2, dim=-1).view(grad_temp_1_chuncked.shape[0], grad_temp_1_chuncked.shape[1], grad_temp_1_chuncked.shape[1], -1)
+    radians = torch.tensor([deg], device=grad_temp_1_chuncked.device).deg2rad()
+    cone_projection = grad_temp_2_chuncked.norm(p=2, dim=-1).unsqueeze(-1) * grad_temp_1_chuncked_norm * torch.tan(radians) + grad_temp_2_chuncked
+
+    # second classifier is a non-robust one -
+    # unless we are less than 45 degrees away - don't cone project
+    #print(" ratio of dimensions that are cone projected: ", (angles_before > radians).float().mean())
+    #print("angle before", angles_before.mean(), angles_before.std(), angles_before.min(), angles_before.max())
+    #print("radians", radians)
+    #print(angles_before_chuncked > radians, "angles_before")
+    #print("False region", (angles_before_chuncked > radians).float().mean())
+    # get the indices of the false region
+    #print(torch.where(angles_before_chuncked < radians))
+
+    grad_temp_chuncked = grad_temp_2_chuncked.clone().detach()
+    grad_temp_chuncked[angles_before_chuncked > radians] = cone_projection[angles_before_chuncked > radians] #grad_temp_1_chuncked[angles_before_chuncked > radians] #cone_projection[angles_before_chuncked > radians]
+
+    grad_temp = grad_temp_chuncked.permute(0, 3, 1, 2) \
+    .reshape(orig_shp[0], orig_shp[1], 
+    chunk_size, chunk_size,
+    grad_temp_1_chuncked.shape[1], grad_temp_1_chuncked
+    .shape[2]) \
+    .permute(0, 1, 4, 2, 5, 3) \
+    .reshape(*(orig_shp))
+
+    
+    return grad_temp, ~(angles_before_chuncked > radians)
+
+
+def cone_project_chuncked_zero(grad_temp_1, grad_temp_2, deg, chunk_size = 1):
+    """
+    grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
+    grad_temp_2: gradient of the loss w.r.t. the non-robust
+    projecting the robust/CF onto the non-robust
+    """
+    #print("in zero cone project")
+    orig_shp = (grad_temp_1.shape[0], 3, int((grad_temp_1.shape[-1]//3)**(1/2) ), int((grad_temp_1.shape[-1]//3)**(1/2) ))
+    
+    grad_temp_1_chuncked = grad_temp_1.view(*orig_shp) \
+    .unfold(2, chunk_size, chunk_size) \
+    .unfold(3, chunk_size, chunk_size) \
+    .permute(0, 1, 4, 5, 2, 3) \
+    .reshape(orig_shp[0], -1, orig_shp[-2]//chunk_size, orig_shp[-1]//chunk_size) \
+    .permute(0, 2, 3, 1)
+    
+    grad_temp_2_chuncked = grad_temp_2.view(*orig_shp) \
+    .unfold(2, chunk_size, chunk_size) \
+    .unfold(3, chunk_size, chunk_size) \
+    .permute(0, 1, 4, 5, 2, 3) \
+    .reshape(orig_shp[0], -1, orig_shp[-2]//chunk_size, orig_shp[-1]//chunk_size) \
+    .permute(0, 2, 3, 1)
+   
+    angles_before_chuncked = torch.acos((grad_temp_1_chuncked * grad_temp_2_chuncked).sum(-1) / (grad_temp_1_chuncked.norm(p=2, dim=-1) * grad_temp_2_chuncked.norm(p=2, dim=-1)))
+    radians = torch.tensor([deg], device=grad_temp_1_chuncked.device).deg2rad()
+    
+
+    grad_temp_chuncked = grad_temp_2_chuncked.clone().detach()
+    grad_temp_chuncked[angles_before_chuncked > radians] = 0.
+
+    grad_temp = grad_temp_chuncked.permute(0, 3, 1, 2) \
+    .reshape(orig_shp[0], orig_shp[1], 
+    chunk_size, chunk_size,
+    grad_temp_1_chuncked.shape[1], grad_temp_1_chuncked
+    .shape[2]) \
+    .permute(0, 1, 4, 2, 5, 3) \
+    .reshape(*(orig_shp))
+
+    
+    return grad_temp, ~(angles_before_chuncked > radians)
+
 
 
 def normalize(x):
@@ -260,6 +352,7 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
     all_probs = []
     all_videos = []
     all_masks = []
+    all_cgs = []
 
     with torch.no_grad():
         with model.ema_scope():
@@ -268,7 +361,7 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
             uc = model.get_learned_conditioning(
                 {model.cond_stage_key: torch.tensor(bs * [1000]).to(model.device)})
                 
-            print(f"rendering classes '{classes}' in {ddim_steps} steps and using s={scale:.2f}.")
+            print(f"rendering classes '{classes}' in {len(sampler.ddim_timesteps)} or {ddim_steps}  steps and using s={scale:.2f}.")
             xc = classes
             c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
             if init_latent is not None:
@@ -284,6 +377,7 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
                     prob = out["prob"]
                     vid = out["video"]
                     mask = out["mask"]
+                    cg = out["concensus_regions"]
 
                 else:
                     samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
@@ -312,6 +406,7 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
             all_probs.append(prob) if ccdddim and prob is not None else None
             all_videos.append(vid) if ccdddim and vid is not None else None
             all_masks.append(mask) if ccdddim and mask is not None else None
+            all_cgs.append(cg) if ccdddim and cg is not None else None
         tac = time.time()
 
 
@@ -320,6 +415,7 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
     out["probs"] = all_probs if len(all_probs) > 0 else None
     out["videos"] = all_videos if len(all_videos) > 0 else None
     out["masks"] = all_masks if len(all_masks) > 0 else None
+    out["cgs"] = all_cgs if len(all_cgs) > 0 else None
     
     return out
 

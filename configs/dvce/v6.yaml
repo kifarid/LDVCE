@@ -1,0 +1,48 @@
+diffusion_model:
+  cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
+  ckpt_path: "models/ldm/cin256-v2/model.ckpt"
+
+seg_model:
+classifier_model:
+  name: "convnext_base"
+
+
+n_samples_per_class: #2
+strength: 0.37 #0.34 #0.3 #28 #0.25
+scale: 2.45 #2.85
+ddim_steps: 500 #500 #375 
+ddim_eta: 0.
+log_rate: 6
+
+data:
+  _target_: scripts.dvce.ImageNet
+  root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+  idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
+  split: 'val'
+  partition: 0
+  return_tgt_cls: True
+  batch_size: 2
+  start_sample: 0
+  end_sample: 50
+
+
+sampler:
+  enforce_same_norms: True
+  guidance: "projected"
+  cone_projection_type: "binning"
+  classifier_lambda: 3.3
+  dist_lambda: 0.18
+  masked_guidance: False
+  backprop_diffusion: True   
+  lp_custom: 1
+  deg_cone_projection: 40.
+
+
+lmb_username: 'faridk'
+wandb:
+  entity: 'kifarid'
+  enabled: False
+  project: 'cdiff'
+  resume: False
+  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${data.partition}.tar'
+  run_id: 

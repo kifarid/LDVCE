@@ -8,7 +8,7 @@ classifier_model:
 
 
 n_samples_per_class: #2
-strength: 0.36 #0.3 #28 #0.25
+strength: 0.38 #0.3 #28 #0.25
 scale: 2.85
 ddim_steps: 375 
 ddim_eta: 0.
@@ -28,7 +28,7 @@ data:
 sampler:
   enforce_same_norms: True
   guidance: "non-projection"
-  classifier_lambda: 1.8
+  classifier_lambda: 2.0
   dist_lambda: 0.3
   masked_guidance: False
   backprop_diffusion: True   
