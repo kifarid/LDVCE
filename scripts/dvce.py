@@ -213,7 +213,7 @@ def main(cfg : DictConfig) -> None:
     # print("wandb run config: ", run.config)
     
     last_data_idx = 0
-    if cfg.resume:
+    if cfg.resume or os.path.isfile(checkpoint_path):
         print(f"resuming from {checkpoint_path}")
         #check if checkpoint exists
         if not os.path.exists(checkpoint_path):
