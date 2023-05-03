@@ -174,20 +174,27 @@ def main(cfg : DictConfig) -> None:
     #get run_id 
     run_id = cfg.wandb.run_id + str(cfg.data.start_sample) + str(cfg.data.end_sample)
     print("current run id: ", run_id)
-    
+    #edit the checkpoint name to include the run_id
+    #if cfg.wandb.run_id is None:
+    # checkpoint_path = checkpoint_path.split(".")[0] + "_" + run_id + checkpoint_path.split(".")[-1]
+    # print("new checkpoint path: ", checkpoint_path)
+    # run_config = run.config
+    # run_config.checkpoint_path = checkpoint_path
     
     print("wandb run config: ", run.config)
     # device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
     print(f"using device: {device}")
     if cfg.resume:
         print(f"resuming from {checkpoint_path}")
-        #check if checkpoint exists
-        if not os.path.exists(checkpoint_path):
-            print("checkpoint does not exist! starting from 0 ...")
-        else:
-            checkpoint = torch.load(checkpoint_path)# torch.load(restored_file.name)
-            batch_id = checkpoint["batch_id"] + 1 if "batch_id" in checkpoint else 0
+        #get file name from checkpoint path
+        #filename = checkpoint_path.split("/")[-1]
+        #restored_file = wandb.restore(filename)
+        #print(f"restored file: {restored_file.name}")
+        checkpoint = torch.load(checkpoint_path)# torch.load(restored_file.name)
+        batch_id = checkpoint["batch_id"] + 1 if "batch_id" in checkpoint else 0
+        #my_table = checkpoint["table"] if "table" in checkpoint else None
         print(f"resuming from batch {batch_id}")
+        #print(f"with table of {len(my_table.data)} rows")
     
     if "seg_model" in cfg and cfg.seg_model is not None:
         print("### Loading segmentation model ###")
@@ -225,6 +232,8 @@ def main(cfg : DictConfig) -> None:
     assert len(sampler.ddim_timesteps) == ddim_steps, "ddim_steps should be equal to len(sampler.ddim_timesteps)"
     n_samples_per_class = cfg.n_samples_per_class
     batch_size = cfg.data.batch_size
+    #precision = "autocast" #"full"
+    #precision_scope = autocast if precision == "autocast" else nullcontext
       
     print(config)
 
@@ -235,6 +244,8 @@ def main(cfg : DictConfig) -> None:
         transforms.ToTensor()
     ]
     transform = transforms.Compose(transform_list)
+    #dataset = datasets.ImageFolder(data_path,  transform=transform)
+    #dataset = ImageNet(data_path, transform=transform)
     dataset = instantiate(cfg.data, start_sample = cfg.data.start_sample+(float(batch_id)*batch_size)/1000 if cfg.resume else cfg.data.start_sample, transform=transform)
     print("dataset length: ", len(dataset))
 
@@ -243,8 +254,14 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
 
+    #my_table = wandb.Table(columns=["id", "image", "source", "target", "lp1", "lp2", *[f"gen_image_{i}" for i in range(n_samples_per_class)], "class_prediction", "video", "mask"])
+    #if not wandb.run.resumed:
     my_table = wandb.Table(columns = ["image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
         #create checkpoint file
+
+
+    #for i, sample in enumerate(dataset, 1000):
+    #    image, label = dataset[i]
     if not wandb.run.resumed:
         torch.save({
                     #"table": copy.deepcopy(my_table),

@@ -1,13 +1,13 @@
 #!/bin/bash
 #PBS -N ldvces
 #PBS -S /bin/bash
-#PBS -l nodes=1:ppn=8:gpus=1,mem=10gb,walltime=24:00:00
+#PBS -l nodes=chip:ppn=8:gpus=1,mem=16gb,walltime=24:00:00
 #PBS -m a
 
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 0-9
+#PBS -t 9
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -20,6 +20,7 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 python -m scripts.dvce --config-name=v7 wandb.enabled=True \
     wandb.run_id=no_cone_resnet \
+    resume=True \
     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/no_cone_$PBS_ARRAYID.log 
 
 exit 0
