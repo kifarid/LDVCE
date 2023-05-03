@@ -7,6 +7,7 @@ import random
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pathlib
 
 
 import torch
@@ -22,6 +23,7 @@ from omegaconf import DictConfig, OmegaConf
 import wandb
 import torchvision
 from torchvision import transforms, datasets
+from torchvision.utils import save_image
 
 from src.clipseg.models.clipseg import CLIPDensePredT
 try:
@@ -140,69 +142,75 @@ def set_seed(seed: int = 0):
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v7_debug")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
         with open_dict(cfg):
             cfg.verbose = True
     if "record_intermediate_results" not in cfg:
         with open_dict(cfg):
-            cfg.record_intermediate_results = False
+            cfg.record_intermediate_results = True
 
     if "verbose" in cfg and not cfg.verbose:
         blockPrint()
 
     LMB_USERNAME = cfg.lmb_username if "lmb_username" in cfg else os.getlogin()
     #check if directories exist
-    os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
-    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", 0o777)
-    os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
-    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", 0o777)
-    os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
-    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", 0o777)
-    os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", exist_ok=True)
-    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", 0o777)
+    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
+    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", 0o777)
+    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
+    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", 0o777)
+    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
+    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", 0o777)
+    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", exist_ok=True)
+    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", 0o777)
 
-    os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
-    os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
-    os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
-    os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
+    # os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
+    # os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
+    # os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
+    # os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
 
 
-    os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
-    os.chmod(os.environ['WANDB_DIR'], 0o777)
-    os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
-    os.chmod(os.environ['WANDB_DATA_DIR'], 0o777)
-    os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
-    os.chmod(os.environ['WANDB_CACHE_DIR'], 0o777)
+    # os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
+    # os.chmod(os.environ['WANDB_DIR'], 0o777)
+    # os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
+    # os.chmod(os.environ['WANDB_DATA_DIR'], 0o777)
+    # os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
+    # os.chmod(os.environ['WANDB_CACHE_DIR'], 0o777)
 
-    WANDB_ENTITY = cfg.wandb.entity
-    checkpoint_path = cfg.checkpoint_path
-    print("checkpoint path: ", checkpoint_path)
+    # WANDB_ENTITY = cfg.wandb.entity
+    # checkpoint_path = cfg.checkpoint_path
+    # print("checkpoint path: ", checkpoint_path)
 
     if "faridk" == LMB_USERNAME:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
-    # load model
+    
+    out_dict = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
+    os.makedirs(out_dict, exist_ok=True)
+    os.chmod(out_dict, 0o777)
+    checkpoint_path = os.path.join(out_dict, "last_saved_id.pth")
+
     config = {}
-    run_id = f"{cfg.wandb.run_id}_{cfg.data.start_sample}_{cfg.data.end_sample}"
+    # run_id = f"{cfg.wandb.run_id}_{cfg.data.start_sample}_{cfg.data.end_sample}"
+    run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
     if cfg.resume:
         print("run ID to resume: ", run_id)
     else:
         print("starting new run", run_id)
     config.update(OmegaConf.to_container(cfg, resolve=True))
-    run = wandb.init(
-        entity=WANDB_ENTITY,
-        project=cfg.wandb.project, 
-        config=config,
-        mode="online" if cfg.wandb.enabled else "offline", 
-        id = run_id, 
-        group = cfg.wandb.run_id,
-        resume = cfg.resume,
-    )
+    # run = wandb.init(
+    #     entity=WANDB_ENTITY,
+    #     project=cfg.wandb.project, 
+    #     config=config,
+    #     mode="online" if cfg.wandb.enabled else "offline", 
+    #     id = run_id, 
+    #     group = cfg.wandb.run_id,
+    #     resume = cfg.resume,
+    # )
       #resume = cfg.wandb.resume) # dir = os.environ['WANDB_DATA_DIR']
     print("current run id: ", run_id)
-    print("wandb run config: ", run.config)
+    # print("wandb run config: ", run.config)
     
     last_data_idx = 0
     if cfg.resume:
@@ -273,12 +281,13 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
 
-    if cfg.record_intermediate_results:
-        my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
-    else:
-        my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2"])
+    # if cfg.record_intermediate_results:
+    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
+    # else:
+    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2"])
         #create checkpoint file
-    if not wandb.run.resumed:
+    # if not wandb.run.resumed:
+    if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
         #wandb.save(checkpoint_path)
 
@@ -324,7 +333,6 @@ def main(cfg : DictConfig) -> None:
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
-        
         out = generate_samples(model, sampler, tgt_classes, ddim_steps, scale, init_latent=init_latent.to(device),
                                t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
 
@@ -347,13 +355,15 @@ def main(cfg : DictConfig) -> None:
         for j in range(batch_size):
             # Generate data for the current row
             src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
-            src_image = wandb.Image(src_image)
+            # src_image = wandb.Image(src_image)
             # gen_images = []
             # for k in range(n_samples_per_class):
             #     gen_image = copy.deepcopy(all_samples[j][k + 1])
             #     gen_images.append(wandb.Image(gen_image))
 
-            gen_image = wandb.Image(copy.deepcopy(all_samples[0][j].cpu()))
+            #gen_image = wandb.Image(copy.deepcopy(all_samples[0][j].cpu()))
+            gen_image = copy.deepcopy(all_samples[0][j].cpu())
+
                 
             class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
             source = i2h[label[j].item()]
@@ -369,58 +379,100 @@ def main(cfg : DictConfig) -> None:
             lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            if cfg.record_intermediate_results:
-                video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
-                cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
-                cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
-                cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
-            mask = wandb.Image(all_masks[j]) if all_masks is not None else None
+            # if cfg.record_intermediate_results:
+            #     video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
+            #     cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
+            #     cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
+            #     cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
+            # mask = wandb.Image(all_masks[j]) if all_masks is not None else None
 
             #print("added data to table")
             #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
+            # if cfg.record_intermediate_results:
+            #     my_table.add_data(
+            #         unique_data_idx[j].item(),
+            #         src_image, 
+            #         source, 
+            #         target, 
+            #         gen_image,
+            #         class_prediction, 
+            #         in_pred_cls, 
+            #         out_pred_cls, 
+            #         out_confid[j].cpu().item(), 
+            #         out_confid_tgt[j].cpu().item(),
+            #         in_confid[j].cpu().item(), 
+            #         in_confid_tgt[j].cpu().item(),
+            #         lp1, 
+            #         lp2,
+            #         video, 
+            #         cgs
+            #     )
+            # else:
+            #     my_table.add_data(
+            #         unique_data_idx[j].item(),
+            #         src_image, 
+            #         source, 
+            #         target, 
+            #         gen_image,
+            #         class_prediction, 
+            #         in_pred_cls, 
+            #         out_pred_cls, 
+            #         out_confid[j].cpu().item(), 
+            #         out_confid_tgt[j].cpu().item(),
+            #         in_confid[j].cpu().item(), 
+            #         in_confid_tgt[j].cpu().item(),
+            #         lp1, 
+            #         lp2,
+            #     )
+            data_dict = {
+                "unique_id": unique_data_idx[j].item(), 
+                "image": src_image, 
+                "source": source, 
+                "target": target, 
+                "gen_image": gen_image,
+                "target_confidence": class_prediction, 
+                "in_pred": in_pred_cls, 
+                "out_pred": out_pred_cls, 
+                "out_confid": out_confid[j].cpu().item(), 
+                "out_tgt_confid": out_confid_tgt[j].cpu().item(), 
+                "in_confid": in_confid[j].cpu().item(), 
+                "in_tgt_confid": in_confid_tgt[j].cpu().item(), 
+                "closness_1": lp1, 
+                "closness_2": lp2,
+            }
             if cfg.record_intermediate_results:
-                my_table.add_data(
-                    unique_data_idx[j].item(),
-                    src_image, 
-                    source, 
-                    target, 
-                    gen_image,
-                    class_prediction, 
-                    in_pred_cls, 
-                    out_pred_cls, 
-                    out_confid[j].cpu().item(), 
-                    out_confid_tgt[j].cpu().item(),
-                    in_confid[j].cpu().item(), 
-                    in_confid_tgt[j].cpu().item(),
-                    lp1, 
-                    lp2,
-                    video, 
-                    cgs
-                )
-            else:
-                my_table.add_data(
-                    unique_data_idx[j].item(),
-                    src_image, 
-                    source, 
-                    target, 
-                    gen_image,
-                    class_prediction, 
-                    in_pred_cls, 
-                    out_pred_cls, 
-                    out_confid[j].cpu().item(), 
-                    out_confid_tgt[j].cpu().item(),
-                    in_confid[j].cpu().item(), 
-                    in_confid_tgt[j].cpu().item(),
-                    lp1, 
-                    lp2,
-                )
+                if all_videos is not None:
+                    video_results = {
+                        "video": (255. * all_videos[0][j]).to(torch.uint8).cpu(), 
+                    }
+                    data_dict = dict(data_dict, **video_results)
+                if all_cgs is not None:
+                    cgs_results = {
+                        "cgs": (255.*all_cgs[0][j]).to(torch.float32).cpu(),
+                    }
+                    data_dict = dict(data_dict, **cgs_results)
+            dict_save_path = os.path.join(out_dict, f'{str(unique_data_idx[j].item()).zfill(5)}.pth')
+            torch.save(data_dict, dict_save_path)
+            os.chmod(dict_save_path, 0o555)
+
+            pathlib.Path(os.path.join(out_dict, 'original')).mkdir(parents=True, exist_ok=True, mode=0o777)
+            os.chmod(os.path.join(out_dict, 'original'), 0o777)
+            pathlib.Path(os.path.join(out_dict, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
+            os.chmod(os.path.join(out_dict, 'counterfactual'), 0o777)
+            orig_save_path = os.path.join(out_dict, 'original', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            save_image(src_image.clip(0, 1), orig_save_path)
+            os.chmod(orig_save_path, 0o555)
+
+            cf_save_path = os.path.join(out_dict, 'counterfactual', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            save_image(gen_image.clip(0, 1), cf_save_path)
+            os.chmod(cf_save_path, 0o555)
 
         if (i + 1) % cfg.log_rate == 0:
-            print(f"logging {i+1} with {len(my_table.data)} rows")
-            table_name = f"dvce_video_{last_data_idx}" #_{i}"
-            print(f"logging {table_name}, {run.dir}, {run}")
-            #try:
-            wandb.log({table_name: copy.deepcopy(my_table)})
+            # print(f"logging {i+1} with {len(my_table.data)} rows")
+            # table_name = f"dvce_video_{last_data_idx}" #_{i}"
+            # print(f"logging {table_name}, {run.dir}, {run}")
+            # #try:
+            # wandb.log({table_name: copy.deepcopy(my_table)})
             #except:
             #    print("failed to log")
             #    print(f"logging {table_name}, {run.dir}, {my_table}")
