@@ -348,6 +348,9 @@ def disabled_train(self, mode=True):
 
 def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None, t_enc=None,
                      init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True):
+    
+    torch.cuda.empty_cache()
+    
     all_samples = []
     all_probs = []
     all_videos = []
@@ -408,7 +411,6 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
             all_masks.append(mask) if ccdddim and mask is not None else None
             all_cgs.append(cg) if ccdddim and cg is not None else None
         tac = time.time()
-
 
     out = {}
     out["samples"] = all_samples

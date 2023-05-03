@@ -1,5 +1,6 @@
 import argparse
 import os
+import psutil
 import yaml
 import copy
 import random
@@ -14,7 +15,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 from contextlib import nullcontext
 from torch import autocast
 
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 import hydra
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
@@ -65,13 +66,19 @@ class ImageNet(datasets.ImageFolder):
             start_sample: float = 0., 
             end_sample: int = 50000//1000,
             return_tgt_cls: bool = False,
-            idx_to_tgt_cls_path = None, 
+            idx_to_tgt_cls_path = None,
+            restart_idx: int = 0, 
             **kwargs
     ):
         _ = kwargs  # Just for consistency with other datasets.
         print(f"Loading ImageNet with start_sample={start_sample}, end_sample={end_sample} ")
         assert split in ["train", "val"]
         assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
+        self.start_sample = start_sample
+
+        assert 0 <= restart_idx < 50000
+        self.restart_idx = restart_idx
+
         path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
         super().__init__(path, transform=transform, target_transform=target_transform)
         
@@ -109,6 +116,10 @@ class ImageNet(datasets.ImageFolder):
 
         else:
             raise NotImplementedError
+        
+        if self.restart_idx > 0:
+            self.samples = self.samples[self.restart_idx:]
+            self.idx_to_tgt_cls = self.idx_to_tgt_cls[self.restart_idx:]
 
         self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
         self.targets = np.array(self.samples)[:, 1]
@@ -116,7 +127,7 @@ class ImageNet(datasets.ImageFolder):
     def __getitem__(self, index):
         sample = super().__getitem__(index)
         if self.return_tgt_cls:
-            return *sample, self.idx_to_tgt_cls[index]
+            return *sample, self.idx_to_tgt_cls[index], index + self.start_sample*1000 + self.restart_idx
         else:
             return sample
 
@@ -126,15 +137,31 @@ def set_seed(seed: int = 0):
     random.seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v4")
-def main(cfg : DictConfig) -> None:    
+def blockPrint():
+    sys.stdout = open(os.devnull, 'w')
 
-    LMB_USERNAME = cfg.lmb_username
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v7_debug")
+def main(cfg : DictConfig) -> None:
+    if "verbose" not in cfg:
+        with open_dict(cfg):
+            cfg.verbose = True
+    if "record_intermediate_results" not in cfg:
+        with open_dict(cfg):
+            cfg.record_intermediate_results = False
+
+    if "verbose" in cfg and not cfg.verbose:
+        blockPrint()
+
+    LMB_USERNAME = cfg.lmb_username if "lmb_username" in cfg else os.getlogin()
     #check if directories exist
     os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
+    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", 0o777)
     os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
+    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", 0o777)
     os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
+    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", 0o777)
     os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", exist_ok=True)
+    os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", 0o777)
 
     os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
     os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
@@ -143,8 +170,11 @@ def main(cfg : DictConfig) -> None:
 
 
     os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
+    os.chmod(os.environ['WANDB_DIR'], 0o777)
     os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
+    os.chmod(os.environ['WANDB_DATA_DIR'], 0o777)
     os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
+    os.chmod(os.environ['WANDB_CACHE_DIR'], 0o777)
 
     WANDB_ENTITY = cfg.wandb.entity
     checkpoint_path = cfg.checkpoint_path
@@ -155,30 +185,26 @@ def main(cfg : DictConfig) -> None:
 
     # load model
     config = {}
+    run_id = f"{cfg.wandb.run_id}_{cfg.data.start_sample}_{cfg.data.end_sample}"
     if cfg.resume:
-        print("run ID to resume: ", cfg.wandb.run_id + str(cfg.data.start_sample) + str(cfg.data.end_sample))
+        print("run ID to resume: ", run_id)
     else:
-        print("starting new run", cfg.wandb.run_id + str(cfg.data.start_sample) + str(cfg.data.end_sample))
+        print("starting new run", run_id)
     config.update(OmegaConf.to_container(cfg, resolve=True))
-    run = wandb.init(entity=WANDB_ENTITY,
-     project=cfg.wandb.project, 
-     config=config,
-    mode="online" if cfg.wandb.enabled else "offline", 
-    id = cfg.wandb.run_id + str(cfg.data.start_sample) + str(cfg.data.end_sample), 
-    group = cfg.wandb.run_id,
-    resume = cfg.resume)
+    run = wandb.init(
+        entity=WANDB_ENTITY,
+        project=cfg.wandb.project, 
+        config=config,
+        mode="online" if cfg.wandb.enabled else "offline", 
+        id = run_id, 
+        group = cfg.wandb.run_id,
+        resume = cfg.resume,
+    )
       #resume = cfg.wandb.resume) # dir = os.environ['WANDB_DATA_DIR']
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    batch_id = 0
-
-    #get run_id 
-    run_id = cfg.wandb.run_id + str(cfg.data.start_sample) + str(cfg.data.end_sample)
     print("current run id: ", run_id)
-    
-    
     print("wandb run config: ", run.config)
-    # device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
-    print(f"using device: {device}")
+    
+    last_data_idx = 0
     if cfg.resume:
         print(f"resuming from {checkpoint_path}")
         #check if checkpoint exists
@@ -186,9 +212,13 @@ def main(cfg : DictConfig) -> None:
             print("checkpoint does not exist! starting from 0 ...")
         else:
             checkpoint = torch.load(checkpoint_path)# torch.load(restored_file.name)
-            batch_id = checkpoint["batch_id"] + 1 if "batch_id" in checkpoint else 0
-        print(f"resuming from batch {batch_id}")
+            last_data_idx = checkpoint["last_data_idx"] + 1 if "last_data_idx" in checkpoint else 0
+        print(f"resuming from batch {last_data_idx}")
     
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = torch.device("cpu") # there seems to be a CUDA/autograd instability in gradient computation
+    print(f"using device: {device}")
+
     if "seg_model" in cfg and cfg.seg_model is not None:
         print("### Loading segmentation model ###")
         if "name" in cfg.seg_model and cfg.seg_model.name == "clipseg":
@@ -201,6 +231,7 @@ def main(cfg : DictConfig) -> None:
             model_seg = SamPredictor(build_sam(checkpoint=sam_checkpoint).to(device))
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device).eval()
+    
     classifier_name = cfg.classifier_model.name
     classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
@@ -212,11 +243,11 @@ def main(cfg : DictConfig) -> None:
     strength = cfg.strength #for unconditional guidance
 
     if "seg_model" not in cfg or cfg.seg_model is None or "name" not in cfg.seg_model:
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
     elif cfg.seg_model.name == "clipseg":
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
     else:
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, detect_model = detect_model, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, detect_model = detect_model, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
 
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
@@ -235,29 +266,27 @@ def main(cfg : DictConfig) -> None:
         transforms.ToTensor()
     ]
     transform = transforms.Compose(transform_list)
-    dataset = instantiate(cfg.data, start_sample = cfg.data.start_sample+(float(batch_id)*batch_size)/1000 if cfg.resume else cfg.data.start_sample, transform=transform)
+    dataset = instantiate(cfg.data, start_sample=cfg.data.start_sample, end_sample=cfg.data.end_sample, transform=transform, restart_idx=last_data_idx)
     print("dataset length: ", len(dataset))
-
 
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
 
-    my_table = wandb.Table(columns = ["image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
+    if cfg.record_intermediate_results:
+        my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
+    else:
+        my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2"])
         #create checkpoint file
     if not wandb.run.resumed:
-        torch.save({
-                    #"table": copy.deepcopy(my_table),
-                    "batch_id": -1,
-                }, checkpoint_path)
+        torch.save({"last_data_idx": -1}, checkpoint_path)
         #wandb.save(checkpoint_path)
 
     for i, batch in enumerate(data_loader):
-
         set_seed(seed=cfg.seed if "seed" in cfg else 0)
 
         if cfg.data.return_tgt_cls:
-            image, label, tgt_classes = batch
+            image, label, tgt_classes, unique_data_idx = batch
             tgt_classes = tgt_classes.to(device) #squeeze()
         else:
             image, label = batch
@@ -295,6 +324,7 @@ def main(cfg : DictConfig) -> None:
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
+        
         out = generate_samples(model, sampler, tgt_classes, ddim_steps, scale, init_latent=init_latent.to(device),
                                t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
 
@@ -339,24 +369,55 @@ def main(cfg : DictConfig) -> None:
             lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
-            cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
-            cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
-            cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
+            if cfg.record_intermediate_results:
+                video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
+                cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
+                cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
+                cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
             mask = wandb.Image(all_masks[j]) if all_masks is not None else None
 
             #print("added data to table")
             #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
-            my_table.add_data(src_image, source, target, gen_image,
-             class_prediction, in_pred_cls, out_pred_cls, 
-             out_confid[j].cpu().item(), out_confid_tgt[j].cpu().item(),
-             in_confid[j].cpu().item(), in_confid_tgt[j].cpu().item(),
-             lp1, lp2,
-              video, cgs)
+            if cfg.record_intermediate_results:
+                my_table.add_data(
+                    unique_data_idx[j].item(),
+                    src_image, 
+                    source, 
+                    target, 
+                    gen_image,
+                    class_prediction, 
+                    in_pred_cls, 
+                    out_pred_cls, 
+                    out_confid[j].cpu().item(), 
+                    out_confid_tgt[j].cpu().item(),
+                    in_confid[j].cpu().item(), 
+                    in_confid_tgt[j].cpu().item(),
+                    lp1, 
+                    lp2,
+                    video, 
+                    cgs
+                )
+            else:
+                my_table.add_data(
+                    unique_data_idx[j].item(),
+                    src_image, 
+                    source, 
+                    target, 
+                    gen_image,
+                    class_prediction, 
+                    in_pred_cls, 
+                    out_pred_cls, 
+                    out_confid[j].cpu().item(), 
+                    out_confid_tgt[j].cpu().item(),
+                    in_confid[j].cpu().item(), 
+                    in_confid_tgt[j].cpu().item(),
+                    lp1, 
+                    lp2,
+                )
 
         if (i + 1) % cfg.log_rate == 0:
             print(f"logging {i+1} with {len(my_table.data)} rows")
-            table_name = f"dvce_video_{batch_id}" #_{i}"
+            table_name = f"dvce_video_{last_data_idx}" #_{i}"
             print(f"logging {table_name}, {run.dir}, {run}")
             #try:
             wandb.log({table_name: copy.deepcopy(my_table)})
@@ -367,14 +428,17 @@ def main(cfg : DictConfig) -> None:
             #        print(row)
             #    exit()
             #run.log({table_name: copy.deepcopy(my_table)})
+            last_data_idx = unique_data_idx[-1].item()
             torch.save({
                 #"table": copy.deepcopy(my_table),
-                "batch_id": i + batch_id,
+                "last_data_idx": last_data_idx,
             }, checkpoint_path)
+            os.chmod(checkpoint_path, 0o777)
             # = checkpoint_path.split("/")[-1]
-            print(f"saved {checkpoint_path}, with batch_id {i + batch_id}")
+            print(f"saved {checkpoint_path}, with data_id {i + last_data_idx}")
             #wandb.save(checkpoint_path, "live")
 
+        del out
             
     #wandb.log({"dvce_video_complete": my_table})
     return None

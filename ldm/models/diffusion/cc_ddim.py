@@ -9,6 +9,7 @@ from tqdm import tqdm
 from functools import partial
 import time 
 import sys
+import psutil
 
 from ldm.modules.diffusionmodules.util import make_ddim_sampling_parameters, make_ddim_timesteps, noise_like, \
     extract_into_tensor
@@ -463,6 +464,7 @@ class CCDDIMSampler(object):
     def p_sample_ddim(self, x, c, t, index, repeat_noise=False, use_original_steps=False, quantize_denoised=False,
                       temperature=1., noise_dropout=0., score_corrector=None, corrector_kwargs=None,
                       unconditional_guidance_scale=1., unconditional_conditioning=None, y=None):
+        
         b, *_, device = *x.shape, x.device
 
         e_t = self.conditional_score(x=x, c=c, t=t, index=index, use_original_steps=use_original_steps,
@@ -545,7 +547,7 @@ class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, detect_model=None, masked_guidance=False,
-                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., cone_projection_type= 'default', self_recurrence=0, **kwargs):
+                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., cone_projection_type= 'default', self_recurrence=0, record_intermediate_results:bool=False, verbose:bool=True,**kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -570,6 +572,8 @@ class CCMDDIMSampler(object):
         self.masked_guidance = masked_guidance
         self.mask_alpha = mask_alpha
         self.self_recurrence = self_recurrence
+        self.record_intermediate_results = record_intermediate_results
+        self.verbose = verbose
 
         self.init_images = None
         self.init_labels = None            
@@ -877,17 +881,19 @@ class CCMDDIMSampler(object):
 
         e_t = e_t_uncond + unconditional_guidance_scale * score_out  # (1 - a_t).sqrt() * grad_out
 
-        # adding images to create a gif
-        pred_x0_copy = pred_x0.clone().detach()
-        img = torch.clamp(_map_img(pred_x0_copy), min=0.0, max=1.0)
-        #img = torch.permute(img, (1, 2, 0, 3)).reshape((img.shape[1], img.shape[2], -1))
-
-        self.images.append(img.cpu())
-        if self.classifier_lambda != 0 and self.cone_projection_type == "binning":
-            self.concensus_regions.append((concensus_region).cpu())
         
-        if prob_best_class is not None:
-            self.probs.append(prob_best_class.cpu())
+        if self.record_intermediate_results:
+            # adding images to create a gif
+            pred_x0_copy = pred_x0.clone().detach()
+            img = torch.clamp(_map_img(pred_x0_copy), min=0.0, max=1.0)
+            #img = torch.permute(img, (1, 2, 0, 3)).reshape((img.shape[1], img.shape[2], -1))
+
+            self.images.append(img.detach().cpu())
+            if self.classifier_lambda != 0 and self.cone_projection_type == "binning":
+                self.concensus_regions.append(concensus_region.detach().cpu())
+            
+            if prob_best_class is not None:
+                self.probs.append(prob_best_class.detach().cpu())
 
         return e_t
 
@@ -1117,7 +1123,10 @@ class CCMDDIMSampler(object):
             # mask[mask < 0.5] = 0.
             # mask[mask >= 0.5] = 1.
 
-        iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
+        if self.verbose:
+            iterator = tqdm(time_range, desc='Decoding image', total=total_steps)
+        else:
+            iterator = range(time_range)
 
         # if latent_t_0:
         #     x_orig = x_latent
@@ -1138,6 +1147,7 @@ class CCMDDIMSampler(object):
             x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps,
                                                 unconditional_guidance_scale=unconditional_guidance_scale,
                                             unconditional_conditioning=unconditional_conditioning, y=y)
+            x_dec = x_dec.detach()
             for j in range(self.self_recurrence):
                 print("self recurrence")
                 x_dec, _ = self.p_sample_ddim(x_dec, cond, ts, index=index, use_original_steps=use_original_steps, unconditional_guidance_scale = 1)
@@ -1148,7 +1158,7 @@ class CCMDDIMSampler(object):
                 print(f"Iteration time {elapsed_time} exceeded limit 6 secs, terminating program...")
                 print("x_dec device: ", x_dec.device)
                 sys.exit(1)  # Terminate the program with exit code 1 (indicating an error)                
-
+        
         out = {}
         out['x_dec'] = x_dec
         out['video'] = torch.stack(self.images, dim=1) if len(self.images) != 0 else None
@@ -1163,4 +1173,5 @@ class CCMDDIMSampler(object):
         
         self.concensus_regions = []
         self.mask = None
+
         return out
