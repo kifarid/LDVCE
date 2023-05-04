@@ -344,7 +344,7 @@ def main(cfg : DictConfig) -> None:
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
 
         out = generate_samples(model, sampler, tgt_classes, ddim_steps, scale, init_latent=init_latent.to(device),
-                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False))
+                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False), seed=cfg.seed if "seed" in cfg else 0)
 
         all_samples = out["samples"]
         all_videos = out["videos"] 
