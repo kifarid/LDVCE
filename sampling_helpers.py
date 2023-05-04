@@ -8,6 +8,7 @@ from PIL import Image
 from omegaconf import OmegaConf
 from torch import distributions as torchd
 from torch.nn import functional as F
+import random
 
 from ldm.util import instantiate_from_config
 from huggingface_hub import hf_hub_download
@@ -347,7 +348,7 @@ def disabled_train(self, mode=True):
 
 
 def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None, t_enc=None,
-                     init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True):
+                     init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True, seed: int = 0):
     
     torch.cuda.empty_cache()
     
@@ -368,9 +369,16 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
             xc = classes
             c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
             if init_latent is not None:
-
+                noises_per_batch = []
+                for b in range(bs):
+                    torch.manual_seed(seed)
+                    np.random.seed(seed)
+                    random.seed(seed)
+                    torch.cuda.manual_seed_all(seed)
+                    noises_per_batch.append(torch.randn_like(init_latent[b]))
+                noise = torch.stack(noises_per_batch, dim=0)
                 z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (bs)).to(
-                    init_latent.device)) if not latent_t_0 else init_latent
+                    init_latent.device), noise=noise) if not latent_t_0 else init_latent
 
                 # decode it
                 if ccdddim:
