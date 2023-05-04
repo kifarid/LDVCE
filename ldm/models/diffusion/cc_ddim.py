@@ -595,9 +595,9 @@ class CCMDDIMSampler(object):
             self.dino_pipeline = True
         elif isinstance(self.lp_custom, int):
             if self.lp_custom == 1:
-                self.distance_criterion = torch.nn.L1Loss()
+                self.distance_criterion = torch.nn.L1Loss(reduction='sum')
             elif self.lp_custom == 2:
-                self.distance_criterion = torch.nn.MSELoss()
+                self.distance_criterion = torch.nn.MSELoss(reduction='sum')
             else:
                 raise NotImplementedError
         else:
@@ -782,9 +782,9 @@ class CCMDDIMSampler(object):
                     if self.log_backprop_gradients: pred_latent_x0.retain_grad()
 
                     if self.dino_pipeline:
-                        grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=False)[0]
+                        grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=False)[0]
                     else:
-                        grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=True)[0]
+                        grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=True)[0]
                         # grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=True)[0]
                         # grad_classifier2 = torch.autograd.grad(log_probs[0].sum(), x_noise, retain_graph=False)[0]
 
@@ -816,13 +816,13 @@ class CCMDDIMSampler(object):
                         e_t_uncond, e_t, pred_x0 = ret_vals
                     pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
                     lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
-                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+                    lp_grad = torch.autograd.grad(lp_dist.sum(), x_noise, retain_graph=False)[0]
             
             elif self.lp_custom:
                 with torch.enable_grad():
                     pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
                     lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
-                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+                    lp_grad = torch.autograd.grad(lp_dist.sum(), x_noise, retain_graph=False)[0]
 
         # assert e_t_uncond.requires_grad == True and e_t.requires_grad == True, "e_t_uncond and e_t should require gradients"
 

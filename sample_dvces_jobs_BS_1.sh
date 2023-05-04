@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N ldvces
 #PBS -S /bin/bash
-#PBS -l hostlist=william:nodes=1:ppn=8:gpus=1,mem=16gb,walltime=24:00:00
+#PBS -l hostlist=chip:nodes=1:ppn=8:gpus=2,mem=16gb,walltime=24:00:00
 #PBS -m a
 
 #PBS -M faridk@informatik.uni-freiburg.de

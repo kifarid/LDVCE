@@ -1,7 +1,7 @@
 resume: False
-checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+#checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
 record_intermediate: False
-output_dir: /misc/lmbraid21/faridk/ldce_v8
+output_dir: /misc/lmbraid21/faridk/LDCE_v8
 
 diffusion_model:
   cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
@@ -29,7 +29,6 @@ data:
   start_sample: 0
   end_sample: 10
 
-
 sampler:
   self_recurrence: 0
   self_recurrence_every_n_steps: 0
@@ -43,11 +42,11 @@ sampler:
   lp_custom: 1
   deg_cone_projection: 40.
 
-
 lmb_username: 'faridk'
-wandb:
-  entity: 'kifarid'
-  enabled: False
-  project: 'cdiff'
-  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
-  run_id: debug
+
+# wandb:
+#   entity: 'kifarid'
+#   enabled: False
+#   project: 'cdiff'
+#   checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+#   run_id: debug
