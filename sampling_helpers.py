@@ -380,6 +380,11 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
                 z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (bs)).to(
                     init_latent.device), noise=noise) if not latent_t_0 else init_latent
 
+                torch.manual_seed(seed)
+                np.random.seed(seed)
+                random.seed(seed)
+                torch.cuda.manual_seed_all(seed)
+
                 # decode it
                 if ccdddim:
                     out = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
