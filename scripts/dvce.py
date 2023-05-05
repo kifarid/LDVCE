@@ -155,37 +155,10 @@ def main(cfg : DictConfig) -> None:
         blockPrint()
 
     LMB_USERNAME = cfg.lmb_username if "lmb_username" in cfg else os.getlogin()
-    #check if directories exist
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", 0o777)
-
-    # os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
-    # os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
-    # os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
-    # os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
-
-
-    # os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_DIR'], 0o777)
-    # os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_DATA_DIR'], 0o777)
-    # os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_CACHE_DIR'], 0o777)
-
-    # WANDB_ENTITY = cfg.wandb.entity
-    # checkpoint_path = cfg.checkpoint_path
-    # print("checkpoint path: ", checkpoint_path)
 
     if "faridk" == LMB_USERNAME:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
-    
     os.chmod(cfg.output_dir, 0o777)
     out_dict = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
     os.makedirs(out_dict, exist_ok=True)
@@ -193,25 +166,13 @@ def main(cfg : DictConfig) -> None:
     checkpoint_path = os.path.join(out_dict, "last_saved_id.pth")
 
     config = {}
-    # run_id = f"{cfg.wandb.run_id}_{cfg.data.start_sample}_{cfg.data.end_sample}"
     run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
     if cfg.resume:
         print("run ID to resume: ", run_id)
     else:
         print("starting new run", run_id)
     config.update(OmegaConf.to_container(cfg, resolve=True))
-    # run = wandb.init(
-    #     entity=WANDB_ENTITY,
-    #     project=cfg.wandb.project, 
-    #     config=config,
-    #     mode="online" if cfg.wandb.enabled else "offline", 
-    #     id = run_id, 
-    #     group = cfg.wandb.run_id,
-    #     resume = cfg.resume,
-    # )
-      #resume = cfg.wandb.resume) # dir = os.environ['WANDB_DATA_DIR']
     print("current run id: ", run_id)
-    # print("wandb run config: ", run.config)
     
     last_data_idx = 0
     if cfg.resume or os.path.isfile(checkpoint_path):
@@ -282,15 +243,8 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
 
-    # if cfg.record_intermediate_results:
-    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
-    # else:
-    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2"])
-        #create checkpoint file
-    # if not wandb.run.resumed:
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
-        #wandb.save(checkpoint_path)
 
     for i, batch in enumerate(data_loader):
         set_seed(seed=cfg.seed if "seed" in cfg else 0)
@@ -356,16 +310,7 @@ def main(cfg : DictConfig) -> None:
         for j in range(batch_size):
             # Generate data for the current row
             src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
-            # src_image = wandb.Image(src_image)
-            # gen_images = []
-            # for k in range(n_samples_per_class):
-            #     gen_image = copy.deepcopy(all_samples[j][k + 1])
-            #     gen_images.append(wandb.Image(gen_image))
-
-            #gen_image = wandb.Image(copy.deepcopy(all_samples[0][j].cpu()))
             gen_image = copy.deepcopy(all_samples[0][j].cpu())
-
-                
             class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
             source = i2h[label[j].item()]
             target = i2h[tgt_classes[j].item()]
@@ -380,51 +325,6 @@ def main(cfg : DictConfig) -> None:
             lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            # if cfg.record_intermediate_results:
-            #     video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
-            #     cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
-            #     cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
-            #     cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
-            # mask = wandb.Image(all_masks[j]) if all_masks is not None else None
-
-            #print("added data to table")
-            #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
-            # if cfg.record_intermediate_results:
-            #     my_table.add_data(
-            #         unique_data_idx[j].item(),
-            #         src_image, 
-            #         source, 
-            #         target, 
-            #         gen_image,
-            #         class_prediction, 
-            #         in_pred_cls, 
-            #         out_pred_cls, 
-            #         out_confid[j].cpu().item(), 
-            #         out_confid_tgt[j].cpu().item(),
-            #         in_confid[j].cpu().item(), 
-            #         in_confid_tgt[j].cpu().item(),
-            #         lp1, 
-            #         lp2,
-            #         video, 
-            #         cgs
-            #     )
-            # else:
-            #     my_table.add_data(
-            #         unique_data_idx[j].item(),
-            #         src_image, 
-            #         source, 
-            #         target, 
-            #         gen_image,
-            #         class_prediction, 
-            #         in_pred_cls, 
-            #         out_pred_cls, 
-            #         out_confid[j].cpu().item(), 
-            #         out_confid_tgt[j].cpu().item(),
-            #         in_confid[j].cpu().item(), 
-            #         in_confid_tgt[j].cpu().item(),
-            #         lp1, 
-            #         lp2,
-            #     )
             data_dict = {
                 "unique_id": unique_data_idx[j].item(), 
                 "image": src_image, 
@@ -469,33 +369,17 @@ def main(cfg : DictConfig) -> None:
             os.chmod(cf_save_path, 0o555)
 
         if (i + 1) % cfg.log_rate == 0:
-            # print(f"logging {i+1} with {len(my_table.data)} rows")
-            # table_name = f"dvce_video_{last_data_idx}" #_{i}"
-            # print(f"logging {table_name}, {run.dir}, {run}")
-            # #try:
-            # wandb.log({table_name: copy.deepcopy(my_table)})
-            #except:
-            #    print("failed to log")
-            #    print(f"logging {table_name}, {run.dir}, {my_table}")
-            #    for i, row in my_table.iterrows():
-            #        print(row)
-            #    exit()
-            #run.log({table_name: copy.deepcopy(my_table)})
             last_data_idx = unique_data_idx[-1].item()
             torch.save({
                 #"table": copy.deepcopy(my_table),
                 "last_data_idx": last_data_idx,
             }, checkpoint_path)
             os.chmod(checkpoint_path, 0o777)
-            # = checkpoint_path.split("/")[-1]
             print(f"saved {checkpoint_path}, with data_id {i + last_data_idx}")
-            #wandb.save(checkpoint_path, "live")
 
         del out
             
-    #wandb.log({"dvce_video_complete": my_table})
     return None
 
 if __name__ == "__main__":
     main()
-    wandb.finish()
