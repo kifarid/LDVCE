@@ -186,6 +186,7 @@ def main(cfg : DictConfig) -> None:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
     
+    os.chmod(cfg.output_dir, 0o777)
     out_dict = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
     os.makedirs(out_dict, exist_ok=True)
     os.chmod(out_dict, 0o777)
