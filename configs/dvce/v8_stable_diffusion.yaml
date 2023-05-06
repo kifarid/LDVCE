@@ -1,11 +1,11 @@
 resume: False
-#checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
 record_intermediate: False
-output_dir: /misc/lmbraid21/faridk/LDCE_v8
+output_dir: /misc/lmbraid21/schrodi/counterfactual/debug
 
 diffusion_model:
-  cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
-  ckpt_path: "models/ldm/cin256-v2/model.ckpt"
+  cfg_path: "configs/stable-diffusion/v1-inference.yaml"
+  ckpt_path: "models/ldm/stable-diffusion-v1/model.ckpt"
 
 seg_model:
 classifier_model:
@@ -25,7 +25,7 @@ data:
   idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
   split: 'val'
   return_tgt_cls: True
-  batch_size: 32
+  batch_size: 2
   start_sample: 0
   end_sample: 10
 
@@ -42,11 +42,11 @@ sampler:
   lp_custom: 1
   deg_cone_projection: 40.
 
-lmb_username: 'faridk'
 
-# wandb:
-#   entity: 'kifarid'
-#   enabled: False
-#   project: 'cdiff'
-#   checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
-#   run_id: debug
+lmb_username: 'schrodi'
+wandb:
+  entity: 'kifarid'
+  enabled: False
+  project: 'cdiff'
+  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+  run_id: debug

@@ -39,7 +39,7 @@ import regex as re
 from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
-from data.imagenet_classnames import name_map, folder_label_map
+from data.imagenet_classnames import name_map, openai_imagenet_classes
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
@@ -54,84 +54,6 @@ i2h = name_map
 #         key, value = line.split(":")
 #         i2h[int(key)] = re.sub(r"^'|',?$", "", value.strip()) #value.strip().strip("'").strip(",").strip("\"")
 
-class ImageNet(datasets.ImageFolder):
-    classes = [name_map[i] for i in range(1000)]
-    name_map = name_map
-
-    def __init__(
-            self, 
-            root:str, 
-            split:str="val", 
-            transform=None, 
-            target_transform=None, 
-            class_idcs=None, 
-            start_sample: float = 0., 
-            end_sample: int = 50000//1000,
-            return_tgt_cls: bool = False,
-            idx_to_tgt_cls_path = None,
-            restart_idx: int = 0, 
-            **kwargs
-    ):
-        _ = kwargs  # Just for consistency with other datasets.
-        print(f"Loading ImageNet with start_sample={start_sample}, end_sample={end_sample} ")
-        assert split in ["train", "val"]
-        assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
-        self.start_sample = start_sample
-
-        assert 0 <= restart_idx < 50000
-        self.restart_idx = restart_idx
-
-        path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
-        super().__init__(path, transform=transform, target_transform=target_transform)
-        
-        with open(idx_to_tgt_cls_path, 'r') as file:
-            idx_to_tgt_cls = yaml.safe_load(file)
-            if isinstance(idx_to_tgt_cls, dict):
-                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
-        self.idx_to_tgt_cls = idx_to_tgt_cls
-
-        self.return_tgt_cls = return_tgt_cls
-
-        if class_idcs is not None:
-            class_idcs = list(sorted(class_idcs))
-            tgt_to_tgt_map = {c: i for i, c in enumerate(class_idcs)}
-            self.classes = [self.classes[c] for c in class_idcs]
-            samples = []
-            idx_to_tgt_cls = []
-            for i, (p, t) in enumerate(self.samples):
-                if t in tgt_to_tgt_map:
-                    samples.append((p, tgt_to_tgt_map[t]))
-                    idx_to_tgt_cls.append(self.idx_to_tgt_cls[i])
-            
-            self.idx_to_tgt_cls = idx_to_tgt_cls
-            #self.samples = [(p, tgt_to_tgt_map[t]) for i, (p, t) in enumerate(self.samples) if t in tgt_to_tgt_map]
-            self.class_to_idx = {k: tgt_to_tgt_map[v] for k, v in self.class_to_idx.items() if v in tgt_to_tgt_map}
-
-        if "val" == split: # reorder
-            new_samples = []
-            idx_to_tgt_cls = []
-            for idx in range(50000//1000):
-                new_samples.extend(self.samples[idx::50000//1000])
-                idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
-            self.samples = new_samples[int(start_sample*1000):end_sample*1000]
-            self.idx_to_tgt_cls = idx_to_tgt_cls[int(start_sample*1000):end_sample*1000]
-
-        else:
-            raise NotImplementedError
-        
-        if self.restart_idx > 0:
-            self.samples = self.samples[self.restart_idx:]
-            self.idx_to_tgt_cls = self.idx_to_tgt_cls[self.restart_idx:]
-
-        self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
-        self.targets = np.array(self.samples)[:, 1]
-    
-    def __getitem__(self, index):
-        sample = super().__getitem__(index)
-        if self.return_tgt_cls:
-            return *sample, self.idx_to_tgt_cls[index], index + self.start_sample*1000 + self.restart_idx
-        else:
-            return sample
 
 def set_seed(seed: int = 0):
     torch.manual_seed(seed)
@@ -142,7 +64,7 @@ def set_seed(seed: int = 0):
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_stable_diffusion")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
         with open_dict(cfg):
@@ -155,62 +77,24 @@ def main(cfg : DictConfig) -> None:
         blockPrint()
 
     LMB_USERNAME = cfg.lmb_username if "lmb_username" in cfg else os.getlogin()
-    #check if directories exist
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals", 0o777)
-    # os.makedirs(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", exist_ok=True)
-    # os.chmod(f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals/checkpoints", 0o777)
-
-    # os.environ["WANDB_API_KEY"] = 'cff06ca1fa10f98d7fde3bf619ee5ec8550aba11'
-    # os.environ['WANDB_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.wandb"
-    # os.environ['WANDB_DATA_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/counterfactuals"
-    # os.environ['WANDB_CACHE_DIR'] = f"/misc/lmbraid21/{LMB_USERNAME}/tmp/.cache/wandb"
-
-
-    # os.makedirs(os.environ['WANDB_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_DIR'], 0o777)
-    # os.makedirs(os.environ['WANDB_DATA_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_DATA_DIR'], 0o777)
-    # os.makedirs(os.environ['WANDB_CACHE_DIR'], exist_ok=True)
-    # os.chmod(os.environ['WANDB_CACHE_DIR'], 0o777)
-
-    # WANDB_ENTITY = cfg.wandb.entity
-    # checkpoint_path = cfg.checkpoint_path
-    # print("checkpoint path: ", checkpoint_path)
 
     if "faridk" == LMB_USERNAME:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
-    
+    os.chmod(cfg.output_dir, 0o777)
     out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
     os.makedirs(out_dir, exist_ok=True)
     os.chmod(out_dir, 0o777)
     checkpoint_path = os.path.join(out_dir, "last_saved_id.pth")
 
     config = {}
-    # run_id = f"{cfg.wandb.run_id}_{cfg.data.start_sample}_{cfg.data.end_sample}"
     run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
     if cfg.resume:
         print("run ID to resume: ", run_id)
     else:
         print("starting new run", run_id)
     config.update(OmegaConf.to_container(cfg, resolve=True))
-    # run = wandb.init(
-    #     entity=WANDB_ENTITY,
-    #     project=cfg.wandb.project, 
-    #     config=config,
-    #     mode="online" if cfg.wandb.enabled else "offline", 
-    #     id = run_id, 
-    #     group = cfg.wandb.run_id,
-    #     resume = cfg.resume,
-    # )
-      #resume = cfg.wandb.resume) # dir = os.environ['WANDB_DATA_DIR']
     print("current run id: ", run_id)
-    # print("wandb run config: ", run.config)
     
     last_data_idx = 0
     if cfg.resume: # or os.path.isfile(checkpoint_path): resume only if asked to, allow restarts
@@ -291,15 +175,8 @@ def main(cfg : DictConfig) -> None:
     with open('data/synset_closest_idx.yaml', 'r') as file:
         synset_closest_idx = yaml.safe_load(file)
 
-    # if cfg.record_intermediate_results:
-    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2", "video", "cgs"])
-    # else:
-    #     my_table = wandb.Table(columns = ["unique_id", "image", "source", "target", "gen_image",  "target_confidence", "in_pred", "out_pred", "out_confid", "out_tgt_confid", "in_confid", "in_tgt_confid", "closness_1", "closness_2"])
-        #create checkpoint file
-    # if not wandb.run.resumed:
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
-        #wandb.save(checkpoint_path)
 
     for i, batch in enumerate(data_loader):
         set_seed(seed=cfg.seed if "seed" in cfg else 0)
@@ -327,11 +204,9 @@ def main(cfg : DictConfig) -> None:
             in_confid_tgt =  logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
             print("in class_pred: ", in_class_pred, in_confid)
             
-
         for j, l in enumerate(label):
             print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
         
-
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
         sampler.init_labels = label # n_samples_per_class * [label]
@@ -342,9 +217,29 @@ def main(cfg : DictConfig) -> None:
         #mapped_image = _unmap_img(init_image)
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
+        
+        if "txt" == model.cond_stage_key: # text-conditional
+            if "ImageNet" in cfg.data._target_:
+                prompts = [f"a photo of a {openai_imagenet_classes[idx.item()]}." for idx in tgt_classes]
+            else:
+                raise NotImplementedError
+        else:
+            prompts = None
 
-        out = generate_samples(model, sampler, tgt_classes, ddim_steps, scale, init_latent=init_latent.to(device),
-                               t_enc=t_enc, init_image=init_image.to(device), ccdddim=True, latent_t_0=cfg.get("latent_t_0", False), seed=cfg.seed if "seed" in cfg else 0)
+        out = generate_samples(
+            model, 
+            sampler, 
+            tgt_classes, 
+            ddim_steps, 
+            scale, 
+            init_latent=init_latent.to(device),
+            t_enc=t_enc, 
+            init_image=init_image.to(device), 
+            ccdddim=True, 
+            latent_t_0=cfg.get("latent_t_0", False),
+            prompts=prompts, 
+            seed=cfg.seed if "seed" in cfg else 0,
+        )
 
         all_samples = out["samples"]
         all_videos = out["videos"] 
@@ -365,16 +260,7 @@ def main(cfg : DictConfig) -> None:
         for j in range(batch_size):
             # Generate data for the current row
             src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
-            # src_image = wandb.Image(src_image)
-            # gen_images = []
-            # for k in range(n_samples_per_class):
-            #     gen_image = copy.deepcopy(all_samples[j][k + 1])
-            #     gen_images.append(wandb.Image(gen_image))
-
-            #gen_image = wandb.Image(copy.deepcopy(all_samples[0][j].cpu()))
             gen_image = copy.deepcopy(all_samples[0][j].cpu())
-
-                
             class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
             source = i2h[label[j].item()]
             target = i2h[tgt_classes[j].item()]
@@ -389,51 +275,6 @@ def main(cfg : DictConfig) -> None:
             lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
             #print(f"lp1: {lp1}, lp2: {lp2}")
 
-            # if cfg.record_intermediate_results:
-            #     video = wandb.Video((255. * all_videos[0][j]).to(torch.uint8).cpu(), fps=10, format="gif")
-            #     cgs_max = wandb.Image((all_cgs[0][j]).to(torch.float32).max(0).values.cpu()) if all_cgs is not None else None
-            #     cgs_min = wandb.Image((all_cgs[0][j]).to(torch.float32).min(0).values.cpu()) if all_cgs is not None else None
-            #     cgs = wandb.Video((255.*all_cgs[0][j]).to(torch.float32).cpu(), fps=10, format="gif") if all_cgs is not None else None
-            # mask = wandb.Image(all_masks[j]) if all_masks is not None else None
-
-            #print("added data to table")
-            #my_table.add_data(i, src_image, source, target, lp1, lp2, *gen_images, class_prediction, video, mask)
-            # if cfg.record_intermediate_results:
-            #     my_table.add_data(
-            #         unique_data_idx[j].item(),
-            #         src_image, 
-            #         source, 
-            #         target, 
-            #         gen_image,
-            #         class_prediction, 
-            #         in_pred_cls, 
-            #         out_pred_cls, 
-            #         out_confid[j].cpu().item(), 
-            #         out_confid_tgt[j].cpu().item(),
-            #         in_confid[j].cpu().item(), 
-            #         in_confid_tgt[j].cpu().item(),
-            #         lp1, 
-            #         lp2,
-            #         video, 
-            #         cgs
-            #     )
-            # else:
-            #     my_table.add_data(
-            #         unique_data_idx[j].item(),
-            #         src_image, 
-            #         source, 
-            #         target, 
-            #         gen_image,
-            #         class_prediction, 
-            #         in_pred_cls, 
-            #         out_pred_cls, 
-            #         out_confid[j].cpu().item(), 
-            #         out_confid_tgt[j].cpu().item(),
-            #         in_confid[j].cpu().item(), 
-            #         in_confid_tgt[j].cpu().item(),
-            #         lp1, 
-            #         lp2,
-            #     )
             data_dict = {
                 "unique_id": unique_data_idx[j].item(), 
                 "image": src_image, 
@@ -478,33 +319,17 @@ def main(cfg : DictConfig) -> None:
             os.chmod(cf_save_path, 0o555)
 
         if (i + 1) % cfg.log_rate == 0:
-            # print(f"logging {i+1} with {len(my_table.data)} rows")
-            # table_name = f"dvce_video_{last_data_idx}" #_{i}"
-            # print(f"logging {table_name}, {run.dir}, {run}")
-            # #try:
-            # wandb.log({table_name: copy.deepcopy(my_table)})
-            #except:
-            #    print("failed to log")
-            #    print(f"logging {table_name}, {run.dir}, {my_table}")
-            #    for i, row in my_table.iterrows():
-            #        print(row)
-            #    exit()
-            #run.log({table_name: copy.deepcopy(my_table)})
             last_data_idx = unique_data_idx[-1].item()
             torch.save({
                 #"table": copy.deepcopy(my_table),
                 "last_data_idx": last_data_idx,
             }, checkpoint_path)
             os.chmod(checkpoint_path, 0o777)
-            # = checkpoint_path.split("/")[-1]
             print(f"saved {checkpoint_path}, with data_id {i + last_data_idx}")
-            #wandb.save(checkpoint_path, "live")
 
         del out
             
-    #wandb.log({"dvce_video_complete": my_table})
     return None
 
 if __name__ == "__main__":
     main()
-    #wandb.finish()

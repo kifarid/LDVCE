@@ -772,8 +772,28 @@ class CCMDDIMSampler(object):
                 e_t_uncond, e_t, pred_x0 = ret_vals
 
         with torch.no_grad():
+            if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom: # retain_graph causes cuda oom issues for dino distance regularizer...
+                with torch.enable_grad():
+                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
+                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=False)[0]
+            elif self.lp_custom:
+                with torch.enable_grad():
+                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
+                    lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
+                    lp_grad = torch.autograd.grad(lp_dist.mean(), x_noise, retain_graph=True)[0]
+            
             if self.classifier_lambda != 0:
                 with torch.enable_grad():
+                    if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom:
+                        x_noise = x.detach().requires_grad_()
+                        ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
+                                                                    use_original_steps, quantize_denoised=quantize_denoised,
+                                                                    return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
+                        if self.log_backprop_gradients:
+                            e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
+                        else:
+                            e_t_uncond, e_t, pred_x0 = ret_vals
                     pred_logits = self.get_classifier_logits(pred_x0)
                     log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
                     log_probs = log_probs[range(log_probs.size(0)), y.view(-1)]
@@ -803,27 +823,6 @@ class CCMDDIMSampler(object):
                         print(torch.norm(grad_classifier, dim=(2,3)), torch.norm(grad_pred_latent_x0, dim=(2,3)), torch.norm(grad_unet_wrt_zt, dim=(2,3)))
                         print(cossim_wpre)
 
-            if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom: # retain_graph causes cuda oom issues for dino distance regularizer...
-                with torch.enable_grad():
-
-                    x_noise = x.detach().requires_grad_()
-                    ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
-                                                                use_original_steps, quantize_denoised=quantize_denoised,
-                                                                return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
-                    if self.log_backprop_gradients:
-                        e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
-                    else:
-                        e_t_uncond, e_t, pred_x0 = ret_vals
-                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
-                    lp_dist = self.distance_criterion(pred_x0_0to1, self.dino_init_features.to(x.device).detach())
-                    lp_grad = torch.autograd.grad(lp_dist.sum(), x_noise, retain_graph=False)[0]
-            
-            elif self.lp_custom:
-                with torch.enable_grad():
-                    pred_x0_0to1 = torch.clamp(_map_img(pred_x0), min=0.0, max=1.0)
-                    lp_dist = self.distance_criterion(pred_x0_0to1, self.init_images.to(x.device))
-                    lp_grad = torch.autograd.grad(lp_dist.sum(), x_noise, retain_graph=False)[0]
-
         # assert e_t_uncond.requires_grad == True and e_t.requires_grad == True, "e_t_uncond and e_t should require gradients"
 
         # if self.guidance == "projected":
@@ -847,7 +846,8 @@ class CCMDDIMSampler(object):
             
             proj_out = projection_fn(implicit_classifier_score.view(x.shape[0], -1),
                                             classifier_score.view(x.shape[0], -1),
-                                            self.deg_cone_projection) \
+                                            self.deg_cone_projection,
+                                            orig_shp=implicit_classifier_score.shape) \
                 if self.guidance == "projected" else classifier_score
             
             classifier_score = proj_out if self.cone_projection_type == "default" else proj_out[0].view_as(classifier_score)
