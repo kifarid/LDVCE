@@ -183,7 +183,7 @@ class OneHotDist(torchd.one_hot_categorical.OneHotCategorical):
         return sample
 
 
-def cone_project(grad_temp_1, grad_temp_2, deg,):
+def cone_project(grad_temp_1, grad_temp_2, deg, orig_shp):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
@@ -210,14 +210,12 @@ def cone_project(grad_temp_1, grad_temp_2, deg,):
     return grad_temp
 
 
-def cone_project_chuncked(grad_temp_1, grad_temp_2, deg, chunk_size = 1):
+def cone_project_chuncked(grad_temp_1, grad_temp_2, deg, orig_shp, chunk_size = 1):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
-    orig_shp = (grad_temp_1.shape[0], 3, int((grad_temp_1.shape[-1]//3)**(1/2) ), int((grad_temp_1.shape[-1]//3)**(1/2) ))
-    
     grad_temp_1_chuncked = grad_temp_1.view(*orig_shp) \
     .unfold(2, chunk_size, chunk_size) \
     .unfold(3, chunk_size, chunk_size) \
@@ -268,15 +266,12 @@ def cone_project_chuncked(grad_temp_1, grad_temp_2, deg, chunk_size = 1):
     return grad_temp, ~(angles_before_chuncked > radians)
 
 
-def cone_project_chuncked_zero(grad_temp_1, grad_temp_2, deg, chunk_size = 1):
+def cone_project_chuncked_zero(grad_temp_1, grad_temp_2, deg, orig_shp, chunk_size = 1):
     """
     grad_temp_1: gradient of the loss w.r.t. the robust/classifier free
     grad_temp_2: gradient of the loss w.r.t. the non-robust
     projecting the robust/CF onto the non-robust
     """
-    #print("in zero cone project")
-    orig_shp = (grad_temp_1.shape[0], 3, int((grad_temp_1.shape[-1]//3)**(1/2) ), int((grad_temp_1.shape[-1]//3)**(1/2) ))
-    
     grad_temp_1_chuncked = grad_temp_1.view(*orig_shp) \
     .unfold(2, chunk_size, chunk_size) \
     .unfold(3, chunk_size, chunk_size) \
@@ -347,9 +342,21 @@ def disabled_train(self, mode=True):
 
 
 
-def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None, t_enc=None,
-                     init_latent=None, ccdddim=False, ddim_eta=0., latent_t_0=True, seed: int = 0):
-    
+def generate_samples(
+        model, 
+        sampler, 
+        target_y, 
+        ddim_steps, 
+        scale, 
+        init_image=None, 
+        t_enc=None,
+        init_latent=None, 
+        ccdddim=False, 
+        ddim_eta=0., 
+        latent_t_0=True, 
+        prompts: list = None,
+        seed: int = 0
+):
     torch.cuda.empty_cache()
     
     all_samples = []
@@ -361,23 +368,29 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
     with torch.no_grad():
         with model.ema_scope():
             tic = time.time()
-            bs = classes.shape[0]
-            uc = model.get_learned_conditioning(
-                {model.cond_stage_key: torch.tensor(bs * [1000]).to(model.device)})
+            print(f"rendering target classes '{target_y}' in {len(sampler.ddim_timesteps)} or {ddim_steps}  steps and using s={scale:.2f}.")
+            batch_size = target_y.shape[0]
+            if "class_label" == model.cond_stage_key: # class-conditional
+                uc = model.get_learned_conditioning({model.cond_stage_key: torch.tensor(batch_size * [1000]).to(model.device)})
+                c = model.get_learned_conditioning({model.cond_stage_key: target_y.to(model.device)})
+            elif "txt" == model.cond_stage_key: # text-conditional
+                uc = model.get_learned_conditioning(batch_size * [""])
+                if prompts is None:
+                    raise ValueError("Prompts are not defined!")
+                c = model.get_learned_conditioning(prompts)
+            else:
+                raise NotImplementedError
                 
-            print(f"rendering classes '{classes}' in {len(sampler.ddim_timesteps)} or {ddim_steps}  steps and using s={scale:.2f}.")
-            xc = classes
-            c = model.get_learned_conditioning({model.cond_stage_key: xc.to(model.device)})
             if init_latent is not None:
                 noises_per_batch = []
-                for b in range(bs):
+                for b in range(batch_size):
                     torch.manual_seed(seed)
                     np.random.seed(seed)
                     random.seed(seed)
                     torch.cuda.manual_seed_all(seed)
                     noises_per_batch.append(torch.randn_like(init_latent[b]))
                 noise = torch.stack(noises_per_batch, dim=0)
-                z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (bs)).to(
+                z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (batch_size)).to(
                     init_latent.device), noise=noise) if not latent_t_0 else init_latent
 
                 torch.manual_seed(seed)
@@ -387,8 +400,15 @@ def generate_samples(model, sampler, classes, ddim_steps, scale, init_image=None
 
                 # decode it
                 if ccdddim:
-                    out = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=scale,
-                                            unconditional_conditioning=uc, y=xc.to(model.device), latent_t_0=latent_t_0)
+                    out = sampler.decode(
+                        z_enc, 
+                        c, 
+                        t_enc, 
+                        unconditional_guidance_scale=scale,
+                        unconditional_conditioning=uc, 
+                        y=target_y.to(model.device), 
+                        latent_t_0=latent_t_0,
+                    )
                     samples = out["x_dec"]
                     prob = out["prob"]
                     vid = out["video"]
