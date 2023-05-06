@@ -70,8 +70,10 @@ def create_table(data_dir, table_name, run):
                         elif "video" in column or "cgs" in column:
                             pass 
                             #row_data.append(wandb.Video(data[column], fps=10, format="gif"))
+                        elif "probability" in column:
+                            row_data.append(data[column][data["target"]].item())
                         else:
-                            row_data.append(data[column])
+                            row_data.append(data[column].item())
                 
                     #row_data = [data[column] for column in columns]
                     wandb_table.add_data(*row_data)
@@ -86,8 +88,8 @@ def create_table(data_dir, table_name, run):
 if __name__ == "__main__":
     # Add command line arguments for data directory and table name
     parser = argparse.ArgumentParser(description='Process data directory and table name')
-    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_v8', help='path to data directory')
-    parser.add_argument('--table-name', type=str, default='lvces_complete', help='name of the wandb table')
+    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/ImageNetDVCEs_', help='path to data directory')
+    parser.add_argument('--table-name', type=str, default='dvces', help='name of the wandb table')
     parser.add_argument('--project', type=str, default='LVCE', help='name of the wandb project')
     parser.add_argument('--entity', type=str, default='kifarid', help='name of the wandb entity')
     parser.add_argument('--mode', type=str, choices=['online', 'offline'], default='online', help='wandb mode')
@@ -96,16 +98,16 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     #load config file from data directory
-    config = load_yaml_files(args.data_dir)[0]
+    #config = load_yaml_files(args.data_dir)[0]
 
-    print(config)
+    #print(config)
 
     run = wandb.init(entity=args.entity,
      project=args.project, 
-     config=config,
+     #config=config,
     mode=args.mode)
     # Call create_table function with data directory and table name arguments
     table = create_table(args.data_dir, args.table_name, run)
     # Log wandb table
-    run.log({args.table_name: table})
+    run.log({"lvces_table": table})
     run.finish()

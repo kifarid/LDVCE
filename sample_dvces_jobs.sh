@@ -6,7 +6,7 @@
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 0
+#PBS -t 9
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -18,9 +18,30 @@ echo "QSUB working on: ${WORKDIR}"
 hostname
 echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
+
 python -m scripts.dvce --config-name=v8\
     data.batch_size=4 \
-    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/no_cone_$PBS_ARRAYID.log 
+    output_dir=/misc/lmbraid21/faridk/LDCE_v8_w \
+    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/no_cone_w_$PBS_ARRAYID.log 
+
+
+
+# python -m scripts.dvce --config-name=v8\
+#     data.batch_size=4 \
+#     output_dir=/misc/lmbraid21/faridk/LDCE_v8_cf_binning \
+#     sampler.guidance=projected \
+#     sampler.cone_projection_type=binning \
+#     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/cf_binning_$PBS_ARRAYID.log 
+
+# python -m scripts.dvce --config-name=v8\
+#     data.batch_size=4 \
+#     output_dir=/misc/lmbraid21/faridk/LDCE_v8_clsg \
+#     sampler.guidance=non-projection \
+#     sampler.cone_projection_type=default \
+#     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/cg_$PBS_ARRAYID.log 
 
 #resume=True \
+#    sampler.guidance=non-projection \
 exit 0
+
+
