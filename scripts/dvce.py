@@ -41,6 +41,9 @@ from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
 from data.imagenet_classnames import name_map, openai_imagenet_classes
 
+from utils.DecisionDensenetModel import DecisionDensenetModel
+from utils.preprocessor import Normalizer, CropAndNormalizer
+
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
 
@@ -64,7 +67,57 @@ def set_seed(seed: int = 0):
 def blockPrint():
     sys.stdout = open(os.devnull, 'w')
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_stable_diffusion")
+def get_classifier(cfg):
+    if "ImageNet" in cfg.data._target_:
+        classifier_name = cfg.classifier_model.name
+        classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True)
+        if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
+            classifier_model = CropAndNormalizer(classifier_model)
+    elif "CelebAHQDataset" in cfg.data._target_:
+        assert cfg.data.query_label in [20, 31, 39], 'Query label MUST be 20 (Gender), 31 (Smile), or 39 (Age) for CelebAHQ'
+        ql = 0
+        if cfg.data.query_label in [31, 39]:
+            ql = 1 if cfg.data.query_label == 31 else 2
+        classifier_model = DecisionDensenetModel(3, pretrained=False,
+                                           query_label=ql)
+        classifier_model.load_state_dict(torch.load(cfg.classifier_model.classifier_path, map_location='cpu')['model_state_dict'])
+        if cfg.classifier_model.classifier_wrapper:
+            classifier_model = Normalizer(
+                classifier_model,
+                [0.5] * 3, [0.5] * 3
+            )
+    else:
+        raise NotImplementedError
+    return classifier_model
+
+def get_dataset(cfg, last_data_idx: int = 0):
+    if "ImageNet" in cfg.data._target_:
+        out_size = 256
+        transform_list = [
+            transforms.Resize((out_size, out_size)),
+            transforms.ToTensor()
+        ]
+        transform = transforms.Compose(transform_list)
+        dataset = instantiate(cfg.data, start_sample=cfg.data.start_sample, end_sample=cfg.data.end_sample, transform=transform, restart_idx=last_data_idx)
+    elif "CelebAHQDataset" in cfg.data._target_:
+        dataset = instantiate(
+            cfg.data,
+            image_size=256, 
+            data_dir=cfg.data.data_dir, 
+            random_crop=False, 
+            random_flip=False, 
+            partition='test',
+            query_label=cfg.data.query_label,
+            normalize=False,
+            shard=cfg.data.shard,
+            num_shards=cfg.data.num_shards,
+            restart_idx=last_data_idx
+        )
+    else:
+        raise NotImplementedError
+    return dataset
+
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_debug")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
         with open_dict(cfg):
@@ -83,13 +136,23 @@ def main(cfg : DictConfig) -> None:
 
     os.makedirs(cfg.output_dir, exist_ok=True)
     os.chmod(cfg.output_dir, 0o777)
-    out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
+    if "ImageNet" in cfg.data._target_:
+        out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
+    elif "CelebAHQDataset" in cfg.data._target_:
+        out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.shard}_{cfg.data.num_shards}")
+    else:
+        out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.shard}_{cfg.data.num_shards}")
     os.makedirs(out_dir, exist_ok=True)
     os.chmod(out_dir, 0o777)
     checkpoint_path = os.path.join(out_dir, "last_saved_id.pth")
 
     config = {}
-    run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
+    if "ImageNet" in cfg.data._target_:
+        run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
+    elif "CelebAHQDataset" in cfg.data._target_:
+        run_id = f"{cfg.data.shard}_{cfg.data.num_shards}"
+    else:
+        raise NotImplementedError
     if cfg.resume:
         print("run ID to resume: ", run_id)
     else:
@@ -125,9 +188,8 @@ def main(cfg : DictConfig) -> None:
 
     model = get_model(cfg_path=cfg.diffusion_model.cfg_path, ckpt_path = cfg.diffusion_model.ckpt_path).to(device).eval()
     
-    classifier_name = cfg.classifier_model.name
-    classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True).to(device)
-    classifier_model = classifier_model.eval()
+    classifier_model = get_classifier(cfg)
+    classifier_model.to(device).eval()
     classifier_model.train = disabled_train
 
     ddim_steps = cfg.ddim_steps
@@ -136,11 +198,11 @@ def main(cfg : DictConfig) -> None:
     strength = cfg.strength #for unconditional guidance
 
     if "seg_model" not in cfg or cfg.seg_model is None or "name" not in cfg.seg_model:
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= None, classifier_wrapper="classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
     elif cfg.seg_model.name == "clipseg":
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, classifier_wrapper="classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
     else:
-        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, detect_model = detect_model, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
+        sampler = CCMDDIMSampler(model, classifier_model, seg_model= model_seg, detect_model = detect_model, classifier_wrapper="classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper, record_intermediate_results=cfg.record_intermediate_results, verbose=cfg.verbose, **cfg.sampler)
 
     sampler.make_schedule(ddim_num_steps=ddim_steps, ddim_eta=ddim_eta, verbose=False)
 
@@ -163,18 +225,13 @@ def main(cfg : DictConfig) -> None:
         
     
     #data_path = cfg.data_path
-    out_size = 256
-    transform_list = [
-        transforms.Resize((out_size, out_size)),
-        transforms.ToTensor()
-    ]
-    transform = transforms.Compose(transform_list)
-    dataset = instantiate(cfg.data, start_sample=cfg.data.start_sample, end_sample=cfg.data.end_sample, transform=transform, restart_idx=last_data_idx)
+    dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
-    with open('data/synset_closest_idx.yaml', 'r') as file:
-        synset_closest_idx = yaml.safe_load(file)
+    if "ImageNet" in cfg.data._target_:
+        with open('data/synset_closest_idx.yaml', 'r') as file:
+            synset_closest_idx = yaml.safe_load(file)
 
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
@@ -188,13 +245,17 @@ def main(cfg : DictConfig) -> None:
             set_seed(seed=cfg.get("seed", 0)) if cfg.fixed_seed else None
             seed = seed if cfg.fixed_seed else -1
             
-
-        if cfg.data.return_tgt_cls:
+        if "return_tgt_cls" in cfg.data and cfg.data.return_tgt_cls:
             image, label, tgt_classes, unique_data_idx = batch
             tgt_classes = tgt_classes.to(device) #squeeze()
         else:
-            image, label = batch
-            tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
+            image, label, unique_data_idx = batch
+            if "ImageNet" in cfg.data._target_:
+                tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
+            elif "CelebAHQDataset" in cfg.data._target_:
+                tgt_classes = (1 - label).type(torch.float32)
+            else:
+                raise NotImplementedError
 
         image = image.to(device) #squeeze()
         label = label.to(device) #.item() #squeeze()
@@ -204,16 +265,26 @@ def main(cfg : DictConfig) -> None:
         #shuffle tgt_classes
         #random.shuffle(tgt_classes)
         #get classifcation prediction
-        with torch.no_grad():
+        with torch.inference_mode():
             #with precision_scope():
-            logits = sampler.get_classifier_logits(_unmap_img(image)) #converting to -1, 1
-            in_class_pred = logits.argmax(dim=1)
-            in_confid = logits.softmax(dim=1).max(dim=1).values
-            in_confid_tgt =  logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+            if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
+                logits = classifier_model(image)
+            else:
+                logits = sampler.get_classifier_logits(_unmap_img(image)) #converting to -1, 1
+            # TODO: handle binary vs multi-class
+            if "ImageNet" in cfg.data._target_: # multi-class
+                in_class_pred = logits.argmax(dim=1)
+                in_confid = logits.softmax(dim=1).max(dim=1).values
+                in_confid_tgt =  logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+            else: # binary
+                in_class_pred = (logits >= 0).type(torch.int8)
+                in_confid = logits.sigmoid()
+                in_confid_tgt =  1 - logits.sigmoid()
             print("in class_pred: ", in_class_pred, in_confid)
             
-        for j, l in enumerate(label):
-            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
+        if "ImageNet" in cfg.data._target_:
+            for j, l in enumerate(label):
+                print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
         
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
@@ -229,6 +300,23 @@ def main(cfg : DictConfig) -> None:
         if "txt" == model.cond_stage_key: # text-conditional
             if "ImageNet" in cfg.data._target_:
                 prompts = [f"a photo of a {openai_imagenet_classes[idx.item()]}." for idx in tgt_classes]
+            elif "CelebAHQDataset" in cfg.data._target_:
+                # query label 31 (smile): label=0 <-> no smile and label=1 <-> smile
+                # query label 39 (age): label=0 <-> old and label=1 <-> young
+                assert cfg.data.query_label in [31, 39]
+                prompts = []
+                for target in tgt_classes:
+                    if cfg.data.query_label == 31 and target == 0:
+                        attr = "non-smiling"
+                    elif cfg.data.query_label == 31 and target == 1:
+                        attr = "smiling"
+                    elif cfg.data.query_label == 39 and target == 0:
+                        attr = "old"
+                    elif cfg.data.query_label == 39 and target == 1:
+                        attr = "young"
+                    else:
+                        raise NotImplementedError
+                    prompts.append(f"a photo of a {attr} person")
             else:
                 raise NotImplementedError
         else:
@@ -255,15 +343,22 @@ def main(cfg : DictConfig) -> None:
         all_masks = out["masks"] 
         all_cgs = out["cgs"]
 
-        with torch.no_grad():
-            logits = sampler.get_classifier_logits(_unmap_img(all_samples[0])) #converting to -1, 1 (it is converted back in the function)
-            out_class_pred = logits.argmax(dim=1)
-            out_confid = logits.softmax(dim=1).max(dim=1).values
-            out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+        with torch.inference_mode():
+            if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
+                logits = classifier_model(all_samples[0])
+            else:
+                logits = sampler.get_classifier_logits(_unmap_img(all_samples[0])) #converting to -1, 1 (it is converted back in the function)
+            if "ImageNet" in cfg.data._target_: # multi-class
+                out_class_pred = logits.argmax(dim=1)
+                out_confid = logits.softmax(dim=1).max(dim=1).values
+                out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+            else: # binary
+                out_class_pred = (logits >= 0).type(torch.int8)
+                out_confid = logits.sigmoid()
+                out_confid_tgt =  1 - logits.sigmoid()
             print("out class_pred: ", out_class_pred, out_confid)
             print(out_confid_tgt)
 
-            
         # Loop through your data and update the table incrementally
         for j in range(batch_size):
             # Generate data for the current row

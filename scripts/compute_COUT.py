@@ -11,6 +11,7 @@ import os.path as osp
 
 from PIL import Image
 from tqdm import tqdm
+import torch.nn.functional as F
 from torch.utils import data
 from torchvision import models
 from torchvision import transforms

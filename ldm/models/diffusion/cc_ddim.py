@@ -547,7 +547,7 @@ class CCMDDIMSampler(object):
     def __init__(self, model, classifier, model_type="latent", schedule="linear", guidance="free", lp_custom=False,
                  deg_cone_projection=10., denoise_dist_input=True, classifier_lambda=1, dist_lambda=0.15,
                  enforce_same_norms=True, seg_model=None, detect_model=None, masked_guidance=False,
-                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., cone_projection_type= 'default', self_recurrence=0, record_intermediate_results:bool=False, verbose:bool=True,**kwargs):
+                 backprop_diffusion=True, log_backprop_gradients: bool = False, mask_alpha = 5., cone_projection_type= 'default', self_recurrence=0, classifier_wrapper: bool = True, record_intermediate_results:bool=False, verbose:bool=True,**kwargs):
 
         super().__init__()
         self.model_type = model_type
@@ -572,6 +572,7 @@ class CCMDDIMSampler(object):
         self.masked_guidance = masked_guidance
         self.mask_alpha = mask_alpha
         self.self_recurrence = self_recurrence
+        self.classifier_wrapper = classifier_wrapper
         self.record_intermediate_results = record_intermediate_results
         self.verbose = verbose
 
@@ -582,6 +583,7 @@ class CCMDDIMSampler(object):
         
         self.detect_model = detect_model
         self.classification_criterion = torch.nn.CrossEntropyLoss()
+        self.binary_classification_criterion = torch.nn.BCEWithLogitsLoss()
         
         self.dino_pipeline = False
         if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom:
@@ -629,8 +631,10 @@ class CCMDDIMSampler(object):
             logits: logits of output layer of target model
 
         """
-        x = tf.center_crop(x, 224)
-        x = normalize(_map_img(x))
+        x = _map_img(x)
+        if not self.classifier_wrapper: # only works for ImageNet!
+            x = tf.center_crop(x, 224)
+            x = normalize(x)
         return self.classifier(x)
 
     def get_dino_features(self, x, device):
@@ -795,9 +799,15 @@ class CCMDDIMSampler(object):
                         else:
                             e_t_uncond, e_t, pred_x0 = ret_vals
                     pred_logits = self.get_classifier_logits(pred_x0)
-                    log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
-                    log_probs = log_probs[range(log_probs.size(0)), y.view(-1)]
-                    prob_best_class = torch.exp(log_probs).detach()
+                    if len(pred_logits.shape) == 2: # multi-class
+                        log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
+                        log_probs = log_probs[range(log_probs.size(0)), y.view(-1)]
+                        prob_best_class = torch.exp(log_probs).detach()
+                    else: # binary
+                        loss = self.binary_classification_criterion(pred_logits, y)
+                        loss *= -1 # minimize this
+                        log_probs = loss
+                        prob_best_class = pred_logits.sigmoid().detach()
 
                     if self.log_backprop_gradients: pred_latent_x0.retain_grad()
 

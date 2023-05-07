@@ -86,7 +86,7 @@ class ImageNet(datasets.ImageFolder):
         if self.return_tgt_cls:
             return *sample, self.idx_to_tgt_cls[index], index + self.start_sample*1000 + self.restart_idx
         else:
-            return sample
+            return sample, index + self.start_sample*1000 + self.restart_idx
         
 
 class CelebADataset(Dataset):
@@ -102,6 +102,7 @@ class CelebADataset(Dataset):
         random_flip=True,
         query_label=-1,
         normalize=True,
+        restart_idx: int = 0,
     ):
         partition_df = pd.read_csv(os.path.join(data_dir, 'list_eval_partition.csv'))
         self.data_dir = data_dir
@@ -133,6 +134,10 @@ class CelebADataset(Dataset):
 
         self.query = query_label
         self.class_cond = class_cond
+
+        self.restart_idx = restart_idx
+        if self.restart_idx > 0:
+            print("TODO")
 
     def __len__(self):
         return len(self.data)
@@ -174,6 +179,8 @@ class CelebAHQDataset(Dataset):
         random_flip=True,
         query_label=-1,
         normalize=True,
+        restart_idx: int = 0,
+        **kwargs
     ):
         from io import StringIO
         # read annotation files
@@ -190,8 +197,8 @@ class CelebAHQDataset(Dataset):
         data = pd.read_csv(StringIO(datastr), sep=' ')
         partition_df = pd.read_csv(os.path.join(data_dir, 'list_eval_partition.csv'))
         mapping_df = pd.read_csv(StringIO(mapstr), sep=' ')
-        mapping_df.rename(columns={'orig_file': 'image_id'}, inplace=True)
-        partition_df = pd.merge(mapping_df, partition_df, on='image_id')
+        # mapping_df.rename(columns={'orig_file': 'image_id'}, inplace=True)
+        partition_df = pd.merge(mapping_df, partition_df, on='idx')
 
         self.data_dir = data_dir
 
@@ -204,7 +211,7 @@ class CelebAHQDataset(Dataset):
         else:
             raise ValueError(f'Unkown partition {partition}')
 
-        self.data = data[partition_df['partition'] == partition]
+        self.data = data[partition_df['split'] == partition]
         self.data = self.data[shard::num_shards]
         self.data.reset_index(inplace=True)
         self.data.replace(-1, 0, inplace=True)
@@ -221,6 +228,12 @@ class CelebAHQDataset(Dataset):
 
         self.query = query_label
         self.class_cond = class_cond
+
+        self.restart_idx = restart_idx
+        if self.restart_idx > 0:
+            self.data = self.data.iloc[self.restart_idx:]
+            self.data.reset_index(inplace=True)
+            self.data.replace(-1, 0, inplace=True)
 
     def __len__(self):
         return len(self.data)
@@ -241,9 +254,9 @@ class CelebAHQDataset(Dataset):
         img = self.transform(img)
 
         if self.query != -1:
-            return img, labels
+            return img, labels, self.restart_idx + idx
 
         if self.class_cond:
-            return img, labels
+            return img, labels, self.restart_idx + idx
         else:
-            return img, {}
+            return img, {}, self.restart_idx + idx
