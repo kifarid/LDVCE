@@ -595,9 +595,9 @@ class CCMDDIMSampler(object):
             self.dino_pipeline = True
         elif isinstance(self.lp_custom, int):
             if self.lp_custom == 1:
-                self.distance_criterion = torch.nn.L1Loss()
+                self.distance_criterion = torch.nn.L1Loss(reduction='sum')
             elif self.lp_custom == 2:
-                self.distance_criterion = torch.nn.MSELoss()
+                self.distance_criterion = torch.nn.MSELoss(reduction='sum')
             else:
                 raise NotImplementedError
         else:
@@ -802,9 +802,9 @@ class CCMDDIMSampler(object):
                     if self.log_backprop_gradients: pred_latent_x0.retain_grad()
 
                     if self.dino_pipeline:
-                        grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=False)[0]
+                        grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=False)[0]
                     else:
-                        grad_classifier = torch.autograd.grad(log_probs.mean(), x_noise, retain_graph=False)[0]
+                        grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=True)[0]
                         # grad_classifier = torch.autograd.grad(log_probs.sum(), x_noise, retain_graph=True)[0]
                         # grad_classifier2 = torch.autograd.grad(log_probs[0].sum(), x_noise, retain_graph=False)[0]
 

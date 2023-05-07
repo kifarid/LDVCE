@@ -382,21 +382,25 @@ def generate_samples(
                 raise NotImplementedError
                 
             if init_latent is not None:
-                noises_per_batch = []
-                for b in range(batch_size):
+                if seed!=-1:
+                    noises_per_batch = []
+                    for b in range(batch_size):
+                        torch.manual_seed(seed)
+                        np.random.seed(seed)
+                        random.seed(seed)
+                        torch.cuda.manual_seed_all(seed)
+                        noises_per_batch.append(torch.randn_like(init_latent[b]))
+                    noise = torch.stack(noises_per_batch, dim=0)
+                else:
+                    noise = None
+                z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (batch_size)).to(
+                    init_latent.device), noise=noise) if not latent_t_0 else init_latent
+
+                if seed!=-1:
                     torch.manual_seed(seed)
                     np.random.seed(seed)
                     random.seed(seed)
                     torch.cuda.manual_seed_all(seed)
-                    noises_per_batch.append(torch.randn_like(init_latent[b]))
-                noise = torch.stack(noises_per_batch, dim=0)
-                z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * (batch_size)).to(
-                    init_latent.device), noise=noise) if not latent_t_0 else init_latent
-
-                torch.manual_seed(seed)
-                np.random.seed(seed)
-                random.seed(seed)
-                torch.cuda.manual_seed_all(seed)
 
                 # decode it
                 if ccdddim:
@@ -426,7 +430,7 @@ def generate_samples(
 
                 samples_ddim, _ = sampler.sample(S=ddim_steps,
                                                     conditioning=c,
-                                                    batch_size=n_samples_per_class,
+                                                    batch_size=batch_size,
                                                     shape=[3, 64, 64],
                                                     verbose=False,
                                                     unconditional_guidance_scale=scale,

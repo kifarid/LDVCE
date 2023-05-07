@@ -81,11 +81,12 @@ def main(cfg : DictConfig) -> None:
     if "faridk" == LMB_USERNAME:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
+    os.makedirs(cfg.output_dir, exist_ok=True)
     os.chmod(cfg.output_dir, 0o777)
-    out_dict = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
-    os.makedirs(out_dict, exist_ok=True)
-    os.chmod(out_dict, 0o777)
-    checkpoint_path = os.path.join(out_dict, "last_saved_id.pth")
+    out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
+    os.makedirs(out_dir, exist_ok=True)
+    os.chmod(out_dir, 0o777)
+    checkpoint_path = os.path.join(out_dir, "last_saved_id.pth")
 
     config = {}
     run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
@@ -97,7 +98,7 @@ def main(cfg : DictConfig) -> None:
     print("current run id: ", run_id)
     
     last_data_idx = 0
-    if cfg.resume or os.path.isfile(checkpoint_path):
+    if cfg.resume: # or os.path.isfile(checkpoint_path): resume only if asked to, allow restarts
         print(f"resuming from {checkpoint_path}")
         #check if checkpoint exists
         if not os.path.exists(checkpoint_path):
@@ -149,8 +150,18 @@ def main(cfg : DictConfig) -> None:
     n_samples_per_class = cfg.n_samples_per_class
     batch_size = cfg.data.batch_size
       
-    print(config)
 
+    #save config to the output directory
+    #check if the config file already exists else create a config file
+    config_path = os.path.join(out_dir, "config.yaml") 
+    if os.path.exists(config_path):
+        print("config file already exists! skipping ...")
+    else:
+        with open(os.path.join(out_dir, "config.yaml"), 'w') as f:
+            print("saving config to ", os.path.join(out_dir, "config.yaml  ..."))
+            yaml.dump(config, f)
+        
+    
     #data_path = cfg.data_path
     out_size = 256
     transform_list = [
@@ -167,9 +178,16 @@ def main(cfg : DictConfig) -> None:
 
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
+    
+    seed = cfg.seed if "seed" in cfg else 0
+    set_seed(seed=seed)
 
     for i, batch in enumerate(data_loader):
-        set_seed(seed=cfg.seed if "seed" in cfg else 0)
+
+        if "fixed_seed" in cfg:
+            set_seed(seed=cfg.get("seed", 0)) if cfg.fixed_seed else None
+            seed = seed if cfg.fixed_seed else -1
+            
 
         if cfg.data.return_tgt_cls:
             image, label, tgt_classes, unique_data_idx = batch
@@ -215,7 +233,7 @@ def main(cfg : DictConfig) -> None:
                 raise NotImplementedError
         else:
             prompts = None
-
+        
         out = generate_samples(
             model, 
             sampler, 
@@ -228,7 +246,7 @@ def main(cfg : DictConfig) -> None:
             ccdddim=True, 
             latent_t_0=cfg.get("latent_t_0", False),
             prompts=prompts, 
-            seed=cfg.seed if "seed" in cfg else 0,
+            seed=seed,
         )
 
         all_samples = out["samples"]
@@ -292,19 +310,19 @@ def main(cfg : DictConfig) -> None:
                         "cgs": (255.*all_cgs[0][j]).to(torch.float32).cpu(),
                     }
                     data_dict = dict(data_dict, **cgs_results)
-            dict_save_path = os.path.join(out_dict, f'{str(unique_data_idx[j].item()).zfill(5)}.pth')
+            dict_save_path = os.path.join(out_dir, f'{str(unique_data_idx[j].item()).zfill(5)}.pth')
             torch.save(data_dict, dict_save_path)
             os.chmod(dict_save_path, 0o555)
 
-            pathlib.Path(os.path.join(out_dict, 'original')).mkdir(parents=True, exist_ok=True, mode=0o777)
-            os.chmod(os.path.join(out_dict, 'original'), 0o777)
-            pathlib.Path(os.path.join(out_dict, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
-            os.chmod(os.path.join(out_dict, 'counterfactual'), 0o777)
-            orig_save_path = os.path.join(out_dict, 'original', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            pathlib.Path(os.path.join(out_dir, 'original')).mkdir(parents=True, exist_ok=True, mode=0o777)
+            os.chmod(os.path.join(out_dir, 'original'), 0o777)
+            pathlib.Path(os.path.join(out_dir, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
+            os.chmod(os.path.join(out_dir, 'counterfactual'), 0o777)
+            orig_save_path = os.path.join(out_dir, 'original', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
             save_image(src_image.clip(0, 1), orig_save_path)
             os.chmod(orig_save_path, 0o555)
 
-            cf_save_path = os.path.join(out_dict, 'counterfactual', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            cf_save_path = os.path.join(out_dir, 'counterfactual', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
             save_image(gen_image.clip(0, 1), cf_save_path)
             os.chmod(cf_save_path, 0o555)
 
