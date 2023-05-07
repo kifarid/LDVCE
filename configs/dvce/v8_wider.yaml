@@ -1,4 +1,5 @@
 resume: False
+fixed_seed: False
 #checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
 record_intermediate: False
 output_dir: /misc/lmbraid21/faridk/LDCE_v8
@@ -13,14 +14,14 @@ classifier_model:
 
 
 n_samples_per_class: #2
-strength: 0.362 #0.322 #0.382 #0.34 #0.3 #28 #0.25
+strength: 0.382 #0.322 #0.382 #0.34 #0.3 #28 #0.25
 scale: 3 #2.45 #2.85
 ddim_steps: 500 #500 #375 
 ddim_eta: 0.
 log_rate: 1
 
 data:
-  _target_: scripts.dvce.ImageNet
+  _target_: data.datasets.ImageNet
   root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
   idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
   split: 'val'

@@ -6,7 +6,7 @@
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 9
+#PBS -t 0
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -19,10 +19,10 @@ hostname
 echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 
-python -m scripts.dvce --config-name=v8\
-    data.batch_size=4 \
-    output_dir=/misc/lmbraid21/faridk/LDCE_v8_w \
-    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/no_cone_w_$PBS_ARRAYID.log 
+python -m scripts.dvce --config-name=v8_wider\
+    data.batch_size=5 \
+    output_dir=/misc/lmbraid21/faridk/LDCE_v8_ws \
+    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/no_cone_ws_$PBS_ARRAYID.log 
 
 
 

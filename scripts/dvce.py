@@ -81,6 +81,7 @@ def main(cfg : DictConfig) -> None:
     if "faridk" == LMB_USERNAME:
         torch.hub.set_dir(f'/misc/lmbraid21/{LMB_USERNAME}/torch')
 
+    os.makedirs(cfg.output_dir, exist_ok=True)
     os.chmod(cfg.output_dir, 0o777)
     out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
     os.makedirs(out_dir, exist_ok=True)
@@ -177,9 +178,16 @@ def main(cfg : DictConfig) -> None:
 
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
+    
+    seed = cfg.seed if "seed" in cfg else 0
+    set_seed(seed=seed)
 
     for i, batch in enumerate(data_loader):
-        set_seed(seed=cfg.seed if "seed" in cfg else 0)
+
+        if "fixed_seed" in cfg:
+            set_seed(seed=cfg.get("seed", 0)) if cfg.fixed_seed else None
+            seed = seed if cfg.fixed_seed else -1
+            
 
         if cfg.data.return_tgt_cls:
             image, label, tgt_classes, unique_data_idx = batch
@@ -225,7 +233,7 @@ def main(cfg : DictConfig) -> None:
                 raise NotImplementedError
         else:
             prompts = None
-
+        
         out = generate_samples(
             model, 
             sampler, 
@@ -238,7 +246,7 @@ def main(cfg : DictConfig) -> None:
             ccdddim=True, 
             latent_t_0=cfg.get("latent_t_0", False),
             prompts=prompts, 
-            seed=cfg.seed if "seed" in cfg else 0,
+            seed=seed,
         )
 
         all_samples = out["samples"]
