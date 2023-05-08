@@ -5,7 +5,7 @@ output_dir: '/misc/lmbraid21/schrodi/counterfactual/debug_celeb'
 
 diffusion_model:
   cfg_path: "configs/stable-diffusion/v1-inference.yaml"
-  ckpt_path: "models/ldm/stable-diffusion-v1/model.ckpt"
+  ckpt_path: "/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" # miniSD https://huggingface.co/justinpinkney/miniSD/tree/main
 
 classifier_model:
   classifier_path: "/misc/lmbraid21/schrodi/pretrained_models/celeba_hq_decision_densenet/celebamaskhq/checkpoint.tar"
