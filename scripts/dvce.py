@@ -227,7 +227,7 @@ def main(cfg : DictConfig) -> None:
     #data_path = cfg.data_path
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
 
     if "ImageNet" in cfg.data._target_:
         with open('data/synset_closest_idx.yaml', 'r') as file:
