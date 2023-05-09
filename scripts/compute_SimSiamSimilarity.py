@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os.path as osp
+import glob
 
 from PIL import Image
 from tqdm import tqdm
@@ -85,28 +86,23 @@ def get_simsiam_dist(weights_path):
 
 # create dataset to read the counterfactual results images
 class CFDataset():
-    def __init__(self, path, exp_name):
+    def __init__(self, path):
 
         self.images = []
         self.path = path
-        self.exp_name = exp_name
-        for CL, CF in itertools.product(['CC'], ['CCF', 'ICF']):
-            self.images += [(CL, CF, I) for I in os.listdir(osp.join(path, 'Results', self.exp_name, CL, CF, 'CF'))]
+        for bucket_folder in glob.glob(self.path + "/bucket*"):
+            self.images += [(original, counterfactual) for original, counterfactual in zip(sorted(glob.glob(bucket_folder + "/original/*.png")), sorted(glob.glob(bucket_folder + "/counterfactual/*.png")))]
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
-        CL, CF, I = self.images[idx]
+        original_path, counterfactual_path = self.images[idx]
 
-        # get paths
-        cl_path = osp.join(self.path, 'Original', 'Correct' if CL == 'CC' else 'Incorrect', I)
-        cf_path = osp.join(self.path, 'Results', self.exp_name, CL, CF, 'CF', I)
+        original = self.load_img(original_path)
+        counterfactual = self.load_img(counterfactual_path)
 
-        cl = self.load_img(cl_path)
-        cf = self.load_img(cf_path)
-
-        return cl, cf
+        return original, counterfactual
 
     def load_img(self, path):
         img = Image.open(os.path.join(path))
@@ -123,16 +119,15 @@ class CFDataset():
 
 
 @torch.inference_mode()
-def compute_FVA(oracle,
+def compute_S3(oracle,
                 path,
-                exp_name,
                 batch_size):
 
-    dataset = CFDataset(path, exp_name)
+    dataset = CFDataset(path)
     dists = []
     loader = data.DataLoader(dataset, batch_size=batch_size,
                              shuffle=False,
-                             num_workers=4, pin_memory=True)
+                             num_workers=16, pin_memory=True)
 
     for cl, cf in tqdm(loader):
         cl = cl.to(device, dtype=torch.float)
@@ -143,11 +138,7 @@ def compute_FVA(oracle,
 
 
 def arguments():
-    parser = argparse.ArgumentParser(description='FVA arguments.')
-    parser.add_argument('--gpu', default='0', type=str,
-                        help='GPU id')
-    parser.add_argument('--exp-name', required=True, type=str,
-                        help='Experiment Name')
+    parser = argparse.ArgumentParser(description='S^3 arguments.')
     parser.add_argument('--output-path', required=True, type=str,
                         help='Results Path')
     parser.add_argument('--weights-path', default='pretrained_models/checkpoint_0099.pth.tar', type=str,
@@ -159,14 +150,11 @@ def arguments():
 
 if __name__ == '__main__':
     args = arguments()
-    device = torch.device('cuda:' + args.gpu)
+    device = torch.device('cuda')
     oracle = get_simsiam_dist(args.weights_path)
     oracle.to(device)
     oracle.eval()
 
-    results = compute_FVA(oracle,
-                          args.output_path,
-                          args.exp_name,
-                          args.batch_size)
+    results = compute_S3(oracle, args.output_path, args.batch_size)
 
     print('SimSiam Similarity: {:>4f}'.format(np.mean(results).item()))
