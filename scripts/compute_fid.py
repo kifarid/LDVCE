@@ -4,6 +4,8 @@ import glob
 import shutil
 import os
 import random
+import subprocess
+import numpy as np
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--output-path', required=True, type=str, default='/path/to/experiment', help='the path of the experiment')
@@ -40,6 +42,7 @@ if not args.sfid: # FID computation
     shutil.rmtree(real_images_path)
     shutil.rmtree(counterfactual_images_path)
 elif args.sfid: # sFID computation
+    sfids = []
     def checkNatNum(n):
         if str(n).isdigit() and float(n) == int(n) and int(n) > 0:
             return True
@@ -87,8 +90,12 @@ elif args.sfid: # sFID computation
                 os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
                 counter += 1
 
-            cmd = "python -m pytorch_fid %s/ %s/ --device cuda" % (real_images_path, counterfactual_images_path)
-            os.system(cmd)
+            cmd = ["python", "-m", "pytorch_fid", f"{real_images_path}/", f"{counterfactual_images_path}/", "--device", "cuda"]
+            output = subprocess.check_output(cmd, universal_newlines=True)
+            #convert output to float
+            sfid = float(output.split()[-1])
+            print("current sFID: ", sfid)
+            sfids.append(sfid)
 
             shutil.rmtree(real_images_path)
             shutil.rmtree(counterfactual_images_path)
@@ -123,10 +130,19 @@ elif args.sfid: # sFID computation
                     os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
                     counter += 1
 
-            cmd = "python -m pytorch_fid %s/ %s/ --device cuda" % (real_images_path, counterfactual_images_path)
-            os.system(cmd)
+            cmd = ["python", "-m", "pytorch_fid", f"{real_images_path}/", f"{counterfactual_images_path}/", "--device", "cuda"]
+            output = subprocess.check_output(cmd, universal_newlines=True)
+            #convert output to float
+            sfid = float(output.split()[-1])
+            print("current sFID: ", sfid)
+            sfids.append(sfid)
 
             shutil.rmtree(real_images_path)
             shutil.rmtree(counterfactual_images_path)
+
+    print("sFID: ", sfids)
+    #get the mean
+    sfid = np.mean(sfids)
+    print("sFID: ", sfid)
 else:
     raise NotImplementedError

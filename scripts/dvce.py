@@ -428,7 +428,7 @@ def main(cfg : DictConfig) -> None:
                 "last_data_idx": last_data_idx,
             }, checkpoint_path)
             os.chmod(checkpoint_path, 0o777)
-            print(f"saved {checkpoint_path}, with data_id {i + last_data_idx}")
+            print(f"saved {checkpoint_path}, with data_id {last_data_idx}")
 
         del out
             

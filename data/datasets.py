@@ -89,6 +89,74 @@ class ImageNet(datasets.ImageFolder):
             return sample, index + self.start_sample*1000 + self.restart_idx
         
 
+class ImageNetSelect(datasets.ImageFolder):
+    classes = [name_map[i] for i in range(1000)]
+    name_map = name_map
+
+    def __init__(
+            self, 
+            root:str, 
+            split:str="val", 
+            transform=None, 
+            target_transform=None, 
+            image_idcs=None,
+            class_idcs=None, 
+            start_sample: float = 0., 
+            end_sample: int = 50000,
+            return_tgt_cls: bool = False,
+            lbl_to_tgt_cls_map = None,
+            restart_idx: int = 0, 
+            **kwargs
+    ):
+        _ = kwargs  # Just for consistency with other datasets.
+        print(f"Loading ImageNet with start_sample={start_sample}, end_sample={end_sample} ")
+        assert split in ["train", "val"]
+        assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000
+        self.start_sample = start_sample
+
+        assert 0 <= restart_idx < 50000
+        self.restart_idx = restart_idx
+
+        path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
+        super().__init__(path, transform=transform, target_transform=target_transform)
+        
+        self.lbl_to_tgt_cls_map = lbl_to_tgt_cls_map
+        self.return_tgt_cls = return_tgt_cls
+
+        #get out the classes desired
+        if class_idcs is not None:
+            class_idcs = list(sorted(class_idcs))
+            self.classes = [self.classes[c] for c in class_idcs]
+            samples = []
+            for i, (p, t) in enumerate(self.samples):
+                if t in class_idcs:
+                    samples.append((p, t))
+            self.samples = samples
+            
+        if "val" == split: # reorder
+            new_samples = []
+            if image_idcs is None:
+                new_samples = self.samples[int(start_sample):end_sample]
+            else:
+                new_samples = [self.samples[i] for i in image_idcs]
+            self.samples = new_samples
+
+        else:
+            raise NotImplementedError
+        
+        if self.restart_idx > 0:
+            self.samples = self.samples[self.restart_idx:]
+
+        self.class_labels = {i: folder_label_map[folder] for i, folder in zip(class_idcs, self.classes)}
+        self.targets = np.array(self.samples)[:, 1]
+    
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+        if self.return_tgt_cls:
+            return *sample, self.lbl_to_tgt_cls_map[sample[-1]], index + self.start_sample + self.restart_idx
+        else:
+            return sample
+
 class CelebADataset(Dataset):
     def __init__(
         self,

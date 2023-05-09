@@ -86,7 +86,7 @@ def create_table(data_dir, table_name, run):
 if __name__ == "__main__":
     # Add command line arguments for data directory and table name
     parser = argparse.ArgumentParser(description='Process data directory and table name')
-    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_v8', help='path to data directory')
+    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_w382_cc23', help='path to data directory')
     parser.add_argument('--table-name', type=str, default='lvces_complete', help='name of the wandb table')
     parser.add_argument('--project', type=str, default='LVCE', help='name of the wandb project')
     parser.add_argument('--entity', type=str, default='kifarid', help='name of the wandb entity')
