@@ -47,8 +47,6 @@ from utils.preprocessor import Normalizer, CropAndNormalizer
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
 
-
-i2h = name_map
 # with open('data/imagenet_clsidx_to_label.txt', "r") as f:
 #     lines = f.read().splitlines()
 #     assert len(lines) == 1000
@@ -145,6 +143,21 @@ def main(cfg : DictConfig) -> None:
     os.makedirs(out_dir, exist_ok=True)
     os.chmod(out_dir, 0o777)
     checkpoint_path = os.path.join(out_dir, "last_saved_id.pth")
+
+    if "ImageNet" in cfg.data._target_:
+        i2h = name_map
+    elif "CelebAHQDataset" in cfg.data._target_:
+        # query label 31 (smile): label=0 <-> no smile and label=1 <-> smile
+        # query label 39 (age): label=0 <-> old and label=1 <-> young
+        assert cfg.data.query_label in [31, 39]
+        if 31 == cfg.data.query_label:
+            i2h = ["no smile", "smile"]
+        elif 39 == cfg.data.query_label:
+            i2h = ["old", "young"]
+        else:
+            raise NotImplementedError
+    else:
+        raise NotImplementedError
 
     config = {}
     if "ImageNet" in cfg.data._target_:
@@ -365,9 +378,9 @@ def main(cfg : DictConfig) -> None:
             src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
             gen_image = copy.deepcopy(all_samples[0][j].cpu())
             class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
+            
             source = i2h[label[j].item()]
             target = i2h[tgt_classes[j].item()]
-
             in_pred_cls = i2h[in_class_pred[j].item()]
             out_pred_cls = i2h[out_class_pred[j].item()]
 
