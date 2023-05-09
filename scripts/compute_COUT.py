@@ -357,4 +357,4 @@ def arguments():
 if __name__ == '__main__':
     args = arguments()
     res = compute_cout(args)
-    print("Cout", res[0])
+    print("COUT", res[0])

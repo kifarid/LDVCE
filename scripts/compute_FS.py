@@ -52,11 +52,10 @@ class CFDataset():
 @torch.inference_mode()
 def compute_FS(oracle,
                 path,
-                exp_name,
                 batch_size,
                 device):
 
-    dataset = CFDataset(path, exp_name)
+    dataset = CFDataset(path)
     loader = data.DataLoader(dataset, batch_size=batch_size,
                              shuffle=False,
                              num_workers=4, pin_memory=True)
