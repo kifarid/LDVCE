@@ -367,8 +367,8 @@ def main(cfg : DictConfig) -> None:
                 out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
             else: # binary
                 out_class_pred = (logits >= 0).type(torch.int8)
-                out_confid = logits.sigmoid()
-                out_confid_tgt =  1 - logits.sigmoid()
+                out_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
+                out_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
             print("out class_pred: ", out_class_pred, out_confid)
             print(out_confid_tgt)
 

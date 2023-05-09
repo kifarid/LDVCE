@@ -28,7 +28,7 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 
 python -m scripts.dvce --config-name=v8_wider\
-    data.batch_size=5 \
+    data.batch_size=4 \
     output_dir=/misc/lmbraid21/faridk/LDCE_v8_cf_binning \
     sampler.guidance=projected \
     sampler.cone_projection_type=binning \
@@ -36,10 +36,10 @@ python -m scripts.dvce --config-name=v8_wider\
 
 # python -m scripts.dvce --config-name=v8\
 #     data.batch_size=4 \
-#     output_dir=/misc/lmbraid21/faridk/LDCE_v8_clsg \
+#     output_dir=/misc/lmbraid21/faridk/LDCE_v8_clsg_ws \
 #     sampler.guidance=non-projection \
 #     sampler.cone_projection_type=default \
-#     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/cg_$PBS_ARRAYID.log 
+#     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/cg_ws_$PBS_ARRAYID.log 
 
 #resume=True \
 #    sampler.guidance=non-projection \
