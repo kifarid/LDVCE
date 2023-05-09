@@ -57,7 +57,7 @@ def create_df(data_dir):
 if __name__ == "__main__":
     # Add command line arguments for data directory and table name
     parser = argparse.ArgumentParser(description='Process data directory and table name')
-    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_v8_w', help='path to data directory')
+    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_w382_cc23', help='path to data directory')
 
     args = parser.parse_args()
 
@@ -69,6 +69,9 @@ if __name__ == "__main__":
     # Call create_table function with data directory and table name arguments
     df = create_df(args.data_dir)
     df.head()
+    print("mean confidence:", df.loc[:, ['target_confidence', 'out_tgt_confid']].mean())
+    print("FR: ",(df['target']==df['out_pred']).mean())
+    print("mean confidence:", df.loc[:, ['closness_1', 'closness_2']].mean())
     # Log wandb table
     #get df without the image columns
     #df_no_img = df.drop(columns=[col for col in df.columns if 'image' in col or 'img' in col or 'counterfactual' in col or 'video' in col or 'cg' in col])
