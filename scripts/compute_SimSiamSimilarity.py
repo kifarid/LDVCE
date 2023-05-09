@@ -119,9 +119,10 @@ class CFDataset():
 
 
 @torch.inference_mode()
-def compute_S3(oracle,
+def _compute_S3(oracle,
                 path,
-                batch_size):
+                batch_size,
+                device):
 
     dataset = CFDataset(path)
     dists = []
@@ -129,13 +130,20 @@ def compute_S3(oracle,
                              shuffle=False,
                              num_workers=16, pin_memory=True)
 
-    for cl, cf in tqdm(loader):
+    for cl, cf in tqdm(loader, leave=False):
         cl = cl.to(device, dtype=torch.float)
         cf = cf.to(device, dtype=torch.float)
         dists.append(oracle(cl, cf).cpu().numpy())
 
     return np.concatenate(dists)
 
+def compute_s3(args):
+    device = torch.device('cuda')
+    oracle = get_simsiam_dist(args.weights_path)
+    oracle.to(device)
+    oracle.eval()
+    return _compute_S3(oracle, args.output_path, args.batch_size, device)
+    
 
 def arguments():
     parser = argparse.ArgumentParser(description='S^3 arguments.')
@@ -150,11 +158,6 @@ def arguments():
 
 if __name__ == '__main__':
     args = arguments()
-    device = torch.device('cuda')
-    oracle = get_simsiam_dist(args.weights_path)
-    oracle.to(device)
-    oracle.eval()
-
-    results = compute_S3(oracle, args.output_path, args.batch_size)
-
+    results = compute_s3(args)
     print('SimSiam Similarity: {:>4f}'.format(np.mean(results).item()))
+    
