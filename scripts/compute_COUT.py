@@ -243,22 +243,28 @@ def auc(curve):
 # create dataset to read the counterfactual results images
 class CFDataset():
     def __init__(self, path, dataset, query_label, target_label):
-        assert dataset in ["ImageNet"]
+        assert dataset in ["ImageNet", "CelebAHQ"]
 
         self.images = []
-        self.path = os.path.join(path, "bucket_0_50000")
+        self.path = path
 
-        for pth_file in sorted(glob.glob(self.path + "/*.pth")):
-            if not os.path.basename(pth_file)[:-4].isdigit():
-                continue
-            data = torch.load(pth_file, map_location="cpu")
-            original_class_id = [k for k, v in name_map.items() if v == data["source"]][0]
-            counterfactual_class_id = [k for k, v in name_map.items() if v == data["target"]][0]
-            if query_label == original_class_id and target_label == counterfactual_class_id:
-                filename = os.path.basename(pth_file)[:-4] + ".png"
-                original = os.path.join(self.path, "original", filename)
-                counterfactual = os.path.join(self.path, "counterfactual", filename)
-                self.images.append((original, counterfactual))
+        if "ImageNet" == dataset:
+            self.path = os.path.join(self.path, "bucket_0_50000")
+
+            for pth_file in sorted(glob.glob(self.path + "/*.pth")):
+                if not os.path.basename(pth_file)[:-4].isdigit():
+                    continue
+                data = torch.load(pth_file, map_location="cpu")
+                original_class_id = [k for k, v in name_map.items() if v == data["source"]][0]
+                counterfactual_class_id = [k for k, v in name_map.items() if v == data["target"]][0]
+                if query_label == original_class_id and target_label == counterfactual_class_id:
+                    filename = os.path.basename(pth_file)[:-4] + ".png"
+                    original = os.path.join(self.path, "original", filename)
+                    counterfactual = os.path.join(self.path, "counterfactual", filename)
+                    self.images.append((original, counterfactual))
+        elif "CelebAHQ" == dataset:
+            for bucket_folder in glob.glob(self.path + "/bucket*"):
+                self.images += [(original, counterfactual) for original, counterfactual in zip(sorted(glob.glob(bucket_folder + "/original/*.png")), sorted(glob.glob(bucket_folder + "/counterfactual/*.png")))]   
 
     def __len__(self):
         return len(self.images)
@@ -350,4 +356,5 @@ def arguments():
 
 if __name__ == '__main__':
     args = arguments()
-    compute_cout(args)
+    res = compute_cout(args)
+    print("Cout", res[0])

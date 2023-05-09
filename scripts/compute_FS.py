@@ -1,6 +1,5 @@
 import os
 import torch
-import torch.nn as nn
 import random
 import argparse
 import itertools
@@ -8,12 +7,12 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os.path as osp
-import glob
 
 from PIL import Image
 from tqdm import tqdm
 from torch.utils import data
 from torchvision import transforms
+import glob
 
 from utils.simsiam import get_simsiam_dist
 
@@ -50,36 +49,40 @@ class CFDataset():
         return img
 
 
-
 @torch.inference_mode()
-def _compute_S3(oracle,
+def compute_FS(oracle,
                 path,
+                exp_name,
                 batch_size,
                 device):
 
-    dataset = CFDataset(path)
-    dists = []
+    dataset = CFDataset(path, exp_name)
     loader = data.DataLoader(dataset, batch_size=batch_size,
                              shuffle=False,
-                             num_workers=16, pin_memory=True)
+                             num_workers=4, pin_memory=True)
 
-    for cl, cf in tqdm(loader, leave=False):
+    dists = []
+    for cl, cf in tqdm(loader):
         cl = cl.to(device, dtype=torch.float)
         cf = cf.to(device, dtype=torch.float)
         dists.append(oracle(cl, cf).cpu().numpy())
 
     return np.concatenate(dists)
 
-def compute_s3(args):
+def compute_fs(args):
     device = torch.device('cuda')
     oracle = get_simsiam_dist(args.weights_path)
     oracle.to(device)
     oracle.eval()
-    return _compute_S3(oracle, args.output_path, args.batch_size, device)
-    
+
+    results = compute_FS(oracle,
+                          args.output_path,
+                          args.batch_size,
+                          device)
+    return results
 
 def arguments():
-    parser = argparse.ArgumentParser(description='S^3 arguments.')
+    parser = argparse.ArgumentParser(description='FVA arguments.')
     parser.add_argument('--output-path', required=True, type=str,
                         help='Results Path')
     parser.add_argument('--weights-path', default='pretrained_models/checkpoint_0099.pth.tar', type=str,
@@ -91,6 +94,7 @@ def arguments():
 
 if __name__ == '__main__':
     args = arguments()
-    results = compute_s3(args)
-    print('SimSiam Similarity: {:>4f}'.format(np.mean(results).item()))
     
+    results = compute_fs(args)
+
+    print('SimSiam Similarity: {:>4f}'.format(np.mean(results).item()))

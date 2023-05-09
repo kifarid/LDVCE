@@ -6,6 +6,7 @@ import os
 import random
 import subprocess
 import numpy as np
+import torch
 
 def compute_fid(args):
     if not args.sfid: # FID computation
@@ -49,7 +50,67 @@ def compute_fid(args):
         print("Assumes buckets are of equivalent size!")
         buckets_list = sorted(glob.glob(args.output_path+ "/bucket*"))
         
-        if len(buckets_list) == 1:
+        if not args.class_balanced:
+            random.seed(0)
+
+            # read all
+            classes_to_paths = {}
+            for pth_file in sorted(glob.glob(args.output_path + "/bucket*/*.pth")):
+                if not os.path.basename(pth_file)[:-4].isdigit():
+                    continue
+                data = torch.load(pth_file, map_location="cpu")
+                if data["source"] in classes_to_paths:
+                    classes_to_paths[data["source"]].append(pth_file)
+                else:
+                    classes_to_paths[data["source"]] = [pth_file]
+
+            # split into 2 sets
+            split1 = split2 = {
+                "original": [],
+                "counterfactual": [],
+            }
+            for pth_files in classes_to_paths.values():
+                split_idx = len(pth_files) // 2
+                for pth_file in pth_files[:split_idx]:
+                    dirname = os.path.dirname(pth_file)
+                    filename = os.path.basename(pth_file).replace("pth", "png")
+                    split1["original"].append(os.path.join(dirname, "original", filename))
+                    split2["counterfactual"].append(os.path.join(dirname, "counterfactual", filename))
+                for pth_file in pth_files[split_idx:]:
+                    dirname = os.path.dirname(pth_file)
+                    filename = os.path.basename(pth_file).replace("pth", "png")
+                    split1["counterfactual"].append(os.path.join(dirname, "counterfactual", filename))
+                    split2["original"].append(os.path.join(dirname, "original", filename))
+
+            for split in [split1, split2]:
+                real_images_path = os.path.join(args.output_path, "all_originals")
+                os.makedirs(real_images_path, mode=777, exist_ok=True)
+                os.chmod(real_images_path, 0o777)
+                counterfactual_images_path = os.path.join(args.output_path, "all_counterfactuals")
+                os.makedirs(counterfactual_images_path, mode=777, exist_ok=True)
+                os.chmod(counterfactual_images_path, 0o777)
+
+                # create symbolic links
+                counter = 0
+                for original_path in split["original"]:
+                    os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
+                    counter += 1
+
+                counter = 0
+                for counterfactual_path in split["counterfactual"]:
+                    os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
+                    counter += 1
+
+                cmd = ["python", "-m", "pytorch_fid", f"{real_images_path}/", f"{counterfactual_images_path}/", "--device", "cuda"]
+                output = subprocess.check_output(cmd, universal_newlines=True)
+                #convert output to float
+                sfid = float(output.split()[-1])
+                sfids.append(sfid)
+
+                shutil.rmtree(real_images_path)
+                shutil.rmtree(counterfactual_images_path)
+
+        elif len(buckets_list) == 1:
             random.seed(0)
 
             examples_per_class = 50
@@ -118,7 +179,6 @@ def compute_fid(args):
                         os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
                         counter += 1
 
-                other_split = list(set(range(len(buckets_list))) - set(split))
                 counter = 0
                 for bucket_idx in split:
                     bucket_folder = buckets_list[bucket_idx]

@@ -9,11 +9,8 @@ import torch
 
 human_readable = ["cheetah-cougar", "zebra-sorrel", "egyptian-persian cat"]
 paths = ["/misc/lmbraid21/faridk/LDCE_zs_ws", "/misc/lmbraid21/faridk/LDCE_cc_ws", "/misc/lmbraid21/faridk/LDCE_ep_ws"]
-# cougar, cheetah, zebra, sorrel, egyptian cat, persian cat
+# zebra, sorrel, cougar, cheetah, egyptian cat, persian cat
 class_indices = [(340, 339), (293, 286), (285, 283)]
-
-
-# S^3
 
 for pair, path, classes in zip(human_readable, paths, class_indices):
     print("#"*5, pair, "#"*5)
@@ -22,6 +19,7 @@ for pair, path, classes in zip(human_readable, paths, class_indices):
             "output_path": path,
             "sfid": False,
             "sfid_splits": 2,
+            "class_balanced": True,
         }
     fid = compute_fid(Namespace(**args))
     print("FID:", round(fid, 1))
@@ -30,6 +28,7 @@ for pair, path, classes in zip(human_readable, paths, class_indices):
             "output_path": path,
             "sfid": True,
             "sfid_splits": 2,
+            "class_balanced": True,
         }
     fid = compute_fid(Namespace(**args))
     print("sFID:", round(fid, 1))   
