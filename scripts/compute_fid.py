@@ -49,40 +49,84 @@ elif args.sfid: # sFID computation
     print("Assumes buckets are of equivalent size!")
     buckets_list = sorted(glob.glob(args.output_path+ "/bucket*"))
     
-    assert len(buckets_list) // args.sfid_splits * args.sfid_splits == len(buckets_list)
+    if len(buckets_list) == 1:
+        random.seed(0)
 
-    random.seed(0)
-    split1 = random.sample(range(len(buckets_list)), len(buckets_list) // args.sfid_splits)
-    split2 = list(set(range(len(buckets_list))) - set(split1))
+        examples_per_class = 50
 
-    for split in [split1, split2]:
-        real_images_path = os.path.join(args.output_path, "all_originals")
-        os.makedirs(real_images_path, mode=777, exist_ok=True)
-        os.chmod(real_images_path, 0o777)
-        counterfactual_images_path = os.path.join(args.output_path, "all_counterfactuals")
-        os.makedirs(counterfactual_images_path, mode=777, exist_ok=True)
-        os.chmod(counterfactual_images_path, 0o777)
+        for split in range(2):
+            real_images_path = os.path.join(args.output_path, "all_originals")
+            os.makedirs(real_images_path, mode=777, exist_ok=True)
+            os.chmod(real_images_path, 0o777)
+            counterfactual_images_path = os.path.join(args.output_path, "all_counterfactuals")
+            os.makedirs(counterfactual_images_path, mode=777, exist_ok=True)
+            os.chmod(counterfactual_images_path, 0o777)
 
-        # create symbolic links
-        counter = 0
-        for bucket_idx in split:
-            bucket_folder = buckets_list[bucket_idx]
-            for original_path in sorted(glob.glob(bucket_folder + "/original/*")):
+            bucket_folder = buckets_list[0]
+
+            # create symbolic links
+            counter = 0
+            if split == 0:
+                files = sorted(glob.glob(bucket_folder + "/original/*"))
+                files = files[:25] + files[50:75]
+            elif split == 1:
+                files = sorted(glob.glob(bucket_folder + "/original/*"))
+                files = files[25:50] + files[75:]
+            for original_path in files:
                 os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
                 counter += 1
 
-        other_split = list(set(range(len(buckets_list))) - set(split))
-        counter = 0
-        for bucket_idx in split:
-            bucket_folder = buckets_list[bucket_idx]
-            for counterfactual_path in sorted(glob.glob(bucket_folder + "/counterfactual/*")):
+            counter = 0
+            if split == 0:
+                files = sorted(glob.glob(bucket_folder + "/counterfactual/*"))
+                files = files[25:50] + files[75:]
+            elif split == 1:
+                files = sorted(glob.glob(bucket_folder + "/counterfactual/*"))
+                files = files[:25] + files[50:75]
+            for counterfactual_path in files:
                 os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
                 counter += 1
 
-        cmd = "python -m pytorch_fid %s/ %s/ --device cuda" % (real_images_path, counterfactual_images_path)
-        os.system(cmd)
+            cmd = "python -m pytorch_fid %s/ %s/ --device cuda" % (real_images_path, counterfactual_images_path)
+            os.system(cmd)
 
-        shutil.rmtree(real_images_path)
-        shutil.rmtree(counterfactual_images_path)
+            shutil.rmtree(real_images_path)
+            shutil.rmtree(counterfactual_images_path)
+    else:
+        assert len(buckets_list) // args.sfid_splits * args.sfid_splits == len(buckets_list)
+
+        random.seed(0)
+        split1 = random.sample(range(len(buckets_list)), len(buckets_list) // args.sfid_splits)
+        split2 = list(set(range(len(buckets_list))) - set(split1))
+
+        for split in [split1, split2]:
+            real_images_path = os.path.join(args.output_path, "all_originals")
+            os.makedirs(real_images_path, mode=777, exist_ok=True)
+            os.chmod(real_images_path, 0o777)
+            counterfactual_images_path = os.path.join(args.output_path, "all_counterfactuals")
+            os.makedirs(counterfactual_images_path, mode=777, exist_ok=True)
+            os.chmod(counterfactual_images_path, 0o777)
+
+            # create symbolic links
+            counter = 0
+            for bucket_idx in split:
+                bucket_folder = buckets_list[bucket_idx]
+                for original_path in sorted(glob.glob(bucket_folder + "/original/*")):
+                    os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
+                    counter += 1
+
+            other_split = list(set(range(len(buckets_list))) - set(split))
+            counter = 0
+            for bucket_idx in split:
+                bucket_folder = buckets_list[bucket_idx]
+                for counterfactual_path in sorted(glob.glob(bucket_folder + "/counterfactual/*")):
+                    os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
+                    counter += 1
+
+            cmd = "python -m pytorch_fid %s/ %s/ --device cuda" % (real_images_path, counterfactual_images_path)
+            os.system(cmd)
+
+            shutil.rmtree(real_images_path)
+            shutil.rmtree(counterfactual_images_path)
 else:
     raise NotImplementedError
