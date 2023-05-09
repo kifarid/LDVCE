@@ -295,9 +295,8 @@ def main(cfg : DictConfig) -> None:
                 in_confid_tgt =  1 - logits.sigmoid()
             print("in class_pred: ", in_class_pred, in_confid)
             
-        if "ImageNet" in cfg.data._target_:
-            for j, l in enumerate(label):
-                print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
+        for j, l in enumerate(label):
+            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
         
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
