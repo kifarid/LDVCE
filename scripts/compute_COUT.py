@@ -3,11 +3,13 @@
 import os
 import torch
 import argparse
+from argparse import Namespace
 import itertools
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import os.path as osp
+import glob
 
 from PIL import Image
 from tqdm import tqdm
@@ -16,9 +18,11 @@ from torch.utils import data
 from torchvision import models
 from torchvision import transforms
 
+from data.imagenet_classnames import name_map
+
 try:
+    from utils.DecisionDensenetModel import DecisionDensenetModel
     from models.dive.densenet import DiVEDenseNet121
-    from models.steex.DecisionDensenetModel import DecisionDensenetModel
     from models.mnist import Net
 except:
     pass
@@ -100,7 +104,7 @@ def evaluate(label, target, classifier, loader, device, binary):
                  'c_prime_curve': []}
 
     with torch.no_grad():
-        for i, (img, cf) in enumerate(tqdm(loader)):
+        for i, (img, cf) in enumerate(tqdm(loader, leave=False)):
             img = img.to(device, dtype=torch.float)
             cf = cf.to(device, dtype=torch.float)
 
@@ -130,7 +134,7 @@ def evaluate(label, target, classifier, loader, device, binary):
             curves[idx, :] += data_points.sum(dim=0)
     curves /= total_samples
     cout /= total_samples
-    print(f"\nEVAL [COUT: {cout:.4f}]")
+    # print(f"COUT: {cout:.4f}")
     return cout, {'indexes': plot_info[2], 'c_curve': curves[0, :].numpy(), 'c_prime_curve': curves[1, :].numpy()}
 
 
@@ -146,7 +150,7 @@ def get_probs(label, target, img, model, binary):
         c_curve = torch.sigmoid(pos * output - (1 - pos) * output)
         c_prime_curve = 1 - c_curve
     else:
-        output =  F.softmax(model(img))
+        output =  F.softmax(model(img), dim=1)
         c_curve = output[:, label]
         c_prime_curve = output[:, target]
 
@@ -238,27 +242,32 @@ def auc(curve):
 
 # create dataset to read the counterfactual results images
 class CFDataset():
-    def __init__(self, path, exp_name):
+    def __init__(self, path, dataset, query_label, target_label):
+        assert dataset in ["ImageNet"]
 
         self.images = []
-        self.path = path
-        self.exp_name = exp_name
-        for CL, CF in itertools.product(['CC'], ['CCF', 'ICF']):
-            self.images += [(CL, CF, I) for I in os.listdir(osp.join(path, 'Results', self.exp_name, CL, CF, 'CF'))]
+        self.path = os.path.join(path, "bucket_0_50000")
+
+        for pth_file in sorted(glob.glob(self.path + "/*.pth")):
+            if not os.path.basename(pth_file)[:-4].isdigit():
+                continue
+            data = torch.load(pth_file, map_location="cpu")
+            original_class_id = [k for k, v in name_map.items() if v == data["source"]][0]
+            counterfactual_class_id = [k for k, v in name_map.items() if v == data["target"]][0]
+            if query_label == original_class_id and target_label == counterfactual_class_id:
+                filename = os.path.basename(pth_file)[:-4] + ".png"
+                original = os.path.join(self.path, "original", filename)
+                counterfactual = os.path.join(self.path, "counterfactual", filename)
+                self.images.append((original, counterfactual))
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, idx):
-        CL, CF, I = self.images[idx]
-        # get paths
-        cl_path = osp.join(self.path, 'Original', 'Correct' if CL == 'CC' else 'Incorrect', I)
-        cf_path = osp.join(self.path, 'Results', self.exp_name, CL, CF, 'CF', I)
-
-        cl = self.load_img(cl_path)
-        cf = self.load_img(cf_path)
-
-        return cl, cf
+        original_path, counterfactual_path = self.images[idx]
+        original = self.load_img(original_path)
+        counterfactual = self.load_img(counterfactual_path)
+        return original, counterfactual
 
     def load_img(self, path):
         img = Image.open(os.path.join(path))
@@ -271,40 +280,13 @@ class CFDataset():
         img = torch.from_numpy(img).float()
         return img
 
+def compute_cout(args):
+    device = torch.device('cuda')
 
-def arguments():
-    parser = argparse.ArgumentParser(description='COUT arguments.')
-    parser.add_argument('--gpu', default='0', type=str,
-                        help='GPU id')
-    parser.add_argument('--exp-name', required=True, type=str,
-                        help='Experiment Name')
-    parser.add_argument('--output-path', required=True, type=str,
-                        help='Results Path')
-    parser.add_argument('--weights-path', required=True, type=str,
-                        help='Classification model weights')
-    parser.add_argument('--dataset', required=True, type=str,
-                        choices=BINARYDATASET + MULTICLASSDATASETS + ["ImageNet"],
-                        help='Dataset to evaluate')
-    parser.add_argument('--batch-size', default=10, type=int,
-                        help='Batch size')
-    parser.add_argument('--query-label', required=True, type=int)
-    parser.add_argument('--target-label', required=True, type=int)
-
-    return parser.parse_args()
-
-
-if __name__ == '__main__':
-    args = arguments()
-    device = torch.device('cuda:' + args.gpu)
-
-    dataset = CFDataset(args.output_path, args.exp_name)
-
+    dataset = CFDataset(args.output_path, dataset=args.dataset, query_label=args.query_label, target_label=args.target_label)
     loader = data.DataLoader(dataset, batch_size=args.batch_size,
                              shuffle=False,
                              num_workers=4, pin_memory=True)
-
-    print('Loading Classifier')
-
     ql = args.query_label
     if args.dataset in ['CelebA', 'CelebAMV']:
         classifier = Normalizer(
@@ -346,4 +328,26 @@ if __name__ == '__main__':
                        classifier,
                        loader,
                        device,
-                       args.dataset in BINARYDATASET)
+                       args.dataset in ["CelebAHQ"])
+    return results
+
+
+def arguments():
+    parser = argparse.ArgumentParser(description='COUT arguments.')
+    parser.add_argument('--output-path', required=True, type=str,
+                        help='Results Path')
+    parser.add_argument('--dataset', required=True, type=str,
+                        choices=["CelebAHQ", "ImageNet"],
+                        help='Dataset to evaluate')
+    parser.add_argument('--query-label', required=True, type=int)
+    parser.add_argument('--target-label', required=True, type=int)
+    parser.add_argument('--batch-size', default=10, type=int,
+                        help='Batch size')
+    parser.add_argument('--weights-path', required=False, type=str,
+                        help='Classification model weights')
+
+    return parser.parse_args()
+
+if __name__ == '__main__':
+    args = arguments()
+    compute_cout(args)
