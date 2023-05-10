@@ -6,79 +6,96 @@ import numpy as np
 
 from PIL import Image
 from tqdm import tqdm
+import glob
+from torch.utils import data
+from data.imagenet_classnames import name_map
+import yaml
 
 from sampling_helpers import disabled_train
 
-def load_img(path):
-    with open(path, "rb") as f:
-        img = Image.open(f)
-        img = img.convert('RGB')
-    return img
+class CFDataset():
+    def __init__(self, path, idx_to_tgt):
 
-def arguments():
-    parser = argparse.ArgumentParser(description="Validity metrics evaluation")
-    parser.add_argument('--cf_dir', required=True, type=str)
-    parser.add_argument('--orig_dir', required=True, type=str)
-    parser.add_argument('--model', required=True, type=str, default="resnet50")
-    return parser.parse_args()
+        self.images = []
+        self.path = path
+        for bucket_folder in sorted(glob.glob(self.path + "/bucket*")):
+            for original, counterfactual in zip(sorted(glob.glob(bucket_folder + "/original/*.png")), sorted(glob.glob(bucket_folder + "/counterfactual/*.png"))):
+                self.images.append((original, counterfactual, os.path.join(bucket_folder, os.path.basename(original).replace("png", "pth"))))
 
-imagenet_mean = (0.485, 0.456, 0.406),
-iamgenet_std = (0.229, 0.224, 0.225),
-imagenet_transform = torchvision.transforms.Compose(
-    [
-        torchvision.transforms.Resize((256, 256)),
-        torchvision.transforms.CenterCrop((224, 224)),
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(mean=imagenet_mean, std=iamgenet_std),
-    ]
-)
+        imagenet_mean = (0.485, 0.456, 0.406)
+        iamgenet_std = (0.229, 0.224, 0.225)
+        self.transform = torchvision.transforms.Compose(
+            [
+                torchvision.transforms.Resize((256, 256)),
+                torchvision.transforms.CenterCrop((224, 224)),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=imagenet_mean, std=iamgenet_std),
+            ]
+        )
+
+        with open(idx_to_tgt, 'r') as file:
+            idx_to_tgt_cls = yaml.safe_load(file)
+            if isinstance(idx_to_tgt_cls, dict):
+                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
+        
+        self.idx_to_tgt_cls = idx_to_tgt_cls
+        idx_to_tgt_cls = []
+        for idx in range(50000//1000):
+            idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
+        self.idx_to_tgt_cls = idx_to_tgt_cls
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, idx):
+        original_path, counterfactual_path, pth_file = self.images[idx]
+
+        original = self.load_img(original_path)
+        counterfactual = self.load_img(counterfactual_path)
+        # data = torch.load(pth_file, map_location="cpu")
+        # counterfactual = data["gen_image"]
+
+        return original, idx%1000, counterfactual, self.idx_to_tgt_cls[idx]
+
+    def load_img(self, path):
+        img = Image.open(path).convert("RGB")
+        return self.transform(img)
 
 @torch.inference_mode()
-def compute_validity_metrics(counterfactual_dir: str, original_dir: str, model: torch.nn.Module, device):
-    flipped, confidences = [], []
-    softmax = torch.nn.Softmax()
-    for cf_example in tqdm(os.listdir(counterfactual_dir)):
-        counterfactual = load_img(os.path.join(counterfactual_dir, cf_example))
-        original = load_img(os.path.join(original_dir, cf_example)) # TODO
-
-        # TODO cf & orig label
-        cf_label = None
-        orig_label = None
-
-        inputs = torch.from_numpy(
-            np.stack([original, counterfactual], axis=0)
-        ).to(device)
-        logits = model(inputs)
-        softmax_logits = softmax(logits)
-        preds = torch.argmax(logits, dim=-1)
-
-        if preds[0] == orig_label and preds[1] == cf_label:
-            flipped.append(1)
-        elif preds[1] != cf_label:
-            flipped.append(0)
-        elif preds[0] != orig_label and preds[1] == cf_label: # ignore this case since orig pred is already wrong...
-            pass
-        else:
-            raise NotImplementedError
-
-        confidences.append(softmax_logits[1, cf_label].cpu().item())
-
-    return np.sum(flipped)/len(flipped), np.mean(confidences)
-
-if __name__ == '__main__':
-    args = arguments()
+def compute_validity_metrics(args):
     device = torch.device("cuda")
 
-    classifier_model = getattr(torchvision.models, args.model)(pretrained=True).to(device)
+    dataset = CFDataset(args.output_path, args.idx_to_tgt)
+    loader = data.DataLoader(dataset, batch_size=args.batch_size,
+                                shuffle=False,
+                                num_workers=16, pin_memory=True)
+
+    classifier_model = getattr(torchvision.models, args.target_model)(pretrained=True).to(device)
     classifier_model = classifier_model.eval()
     classifier_model.train = disabled_train
     
-    flip_ratio, confidence = compute_validity_metrics(
-        counterfactual_dir=args.cf_dir, 
-        original_dir=args.orig_dir, 
-        model=classifier_model, 
-        device=device
-    )
+    flipped, confidences = [], []
+    softmax = torch.nn.Softmax(dim=-1)
+    for original, original_label, counterfactual, counterfactual_label in tqdm(loader, leave=False):
+        logits = classifier_model(counterfactual.to(device))
+        preds = torch.argmax(logits, dim=1).cpu()
+        softmax_logits = softmax(logits)
+        flipped += list((preds == counterfactual_label).type(torch.uint8).cpu().numpy())
+        confidences += list(softmax_logits[range(counterfactual_label.shape[0]), counterfactual_label].cpu().numpy())
+
+    return np.sum(flipped)/len(dataset), np.mean(confidences)
+
+def arguments():
+    parser = argparse.ArgumentParser(description="Validity metrics evaluation")
+    parser.add_argument('--output-path', required=True, type=str)
+    parser.add_argument('--target-model', required=True, type=str, default="resnet50")
+    parser.add_argument('--batch_size', required=False, type=int, default=32)
+    return parser.parse_args()
+
+if __name__ == '__main__':
+    args = arguments()
+    
+    flip_ratio, confidence = compute_validity_metrics(args)
 
     print(f"Flip ratio: {flip_ratio}")
     print(f"Confidence: {confidence}")
