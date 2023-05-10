@@ -65,7 +65,10 @@ def compute_fid(args):
                     classes_to_paths[data["source"]] = [pth_file]
 
             # split into 2 sets
-            split1 = split2 = {
+            split1, split2 = {
+                "original": [],
+                "counterfactual": [],
+            }, {
                 "original": [],
                 "counterfactual": [],
             }
