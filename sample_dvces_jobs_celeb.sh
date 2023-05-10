@@ -6,7 +6,7 @@
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 1
+#PBS -t 0
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -34,10 +34,11 @@ python -m scripts.dvce --config-name=v8_celebAHQ \
     sampler.classifier_lambda=3. \
     sampler.dist_lambda=5.0 \
     data.num_shards=10 \
+    sampler.deg_cone_projection=45 \
     data.shard=${PBS_ARRAYID} \
     ddim_steps=${ddim_steps} \
-    output_dir=/misc/lmbraid21/faridk/celeb_proj_${strength}_d5_c3 \
-    strength=$strength > logs/celeb_${strength}_d5_c3_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
+    output_dir=/misc/lmbraid21/faridk/celeb_proj_${strength}_d5_c3_45 \
+    strength=$strength > logs/celeb_${strength}_d5_c3_45_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
 
 # python -m scripts.dvce --config-name=v8_celebAHQ \
 #     data.batch_size=1 \
