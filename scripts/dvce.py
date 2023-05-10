@@ -291,12 +291,12 @@ def main(cfg : DictConfig) -> None:
                 in_confid_tgt =  logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
             else: # binary
                 in_class_pred = (logits >= 0).type(torch.int8)
-                in_confid = logits.sigmoid()
-                in_confid_tgt =  1 - logits.sigmoid()
+                in_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
+                in_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
             print("in class_pred: ", in_class_pred, in_confid)
-            
+        
         for j, l in enumerate(label):
-            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[tgt_classes[j].item()]}")
+            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(tgt_classes[j].item())]}")
         
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
@@ -379,7 +379,7 @@ def main(cfg : DictConfig) -> None:
             class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
             
             source = i2h[label[j].item()]
-            target = i2h[tgt_classes[j].item()]
+            target = i2h[int(tgt_classes[j].item())]
             in_pred_cls = i2h[in_class_pred[j].item()]
             out_pred_cls = i2h[out_class_pred[j].item()]
 
