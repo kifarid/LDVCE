@@ -1,5 +1,8 @@
-from argparse import Namespace
+from argparse import Namespace, ArgumentParser
 import numpy as np
+import yaml 
+import os
+import glob
 
 from scripts.compute_fid import compute_fid
 from scripts.compute_FVA import compute_fva
@@ -8,10 +11,21 @@ from scripts.compute_MNAC import compute_mnac
 from scripts.compute_CD import compute_cd
 from scripts.compute_COUT import compute_cout
 
-path = "/misc/lmbraid21/faridk/celeb_proj_0.4_d5_c38"
+
+if __name__ == "__main__":
+    parser = ArgumentParser()
+    parser.add_argument("--path", type=str, default="/misc/lmbraid21/faridk/celeb_smile_new")
+    args = parser.parse_args()
+    path = args.path
+    #load config.yaml file from data subdirectories
+    
+
+    config = yaml.load(open(glob.glob(args.path + '/**/config.yaml', recursive=True)[0], "r"), Loader=yaml.FullLoader)
+    query_label = config["data"]["query_label"]
 
 
-for query_label in [31, 39]:
+
+for query_label in [query_label]:
     # FID
     args = {
         "output_path": path,

@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N ldvces_zs
+#PBS -N ldvces_zs_l2
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
@@ -19,13 +19,14 @@ hostname
 echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 
-python -m scripts.dvce --config-name=v10_zs\
+python -m scripts.dvce --config-name=v8_zs\
     data.batch_size=5 \
     strength=0.382 \
     sampler.deg_cone_projection=45. \
     sampler.classifier_lambda=2.3 \
     sampler.dist_lambda=0.3 \
-    output_dir=/misc/lmbraid21/faridk/LDCE_zs_ws > logs/no_cone_zs_ws.log 
+    sampler.lp_custom=2 \
+    output_dir=/misc/lmbraid21/faridk/LDCE_zs_ws_l2 > logs/no_cone_zs_ws_l2.log 
 
 exit 0
 
