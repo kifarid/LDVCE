@@ -35,3 +35,30 @@ class CropAndNormalizer(torch.nn.Module):
         x = self.center_crop(x)
         x = (x - self.mu) / self.sigma
         return self.classifier(x)
+    
+
+class ResizeAndNormalizer(torch.nn.Module):
+    def __init__(self, classifier, resolution: tuple=(224, 224), mu=[0.485, 0.456, 0.406], sigma=[0.229, 0.224, 0.225]) -> None:
+        super().__init__()
+        self.classifier = classifier
+        self.resolution = resolution
+        self.resize = torchvision.transforms.Resize(resolution)
+        self.register_buffer('mu', torch.tensor(mu).view(1, -1, 1, 1))
+        self.register_buffer('sigma', torch.tensor(sigma).view(1, -1, 1, 1))
+
+    def forward(self, x):
+        # assumes x in [0, 1]!
+        x = self.resize(x)
+        x = (x - self.mu) / self.sigma
+        return self.classifier(x)
+
+class GenericPreprocessing(torch.nn.Module):
+    def __init__(self, classifier, preprocessor) -> None:
+        super().__init__()
+        self.classifier = classifier
+        self.preprocessor = preprocessor
+
+    def forward(self, x):
+        # assumes x in [0, 1]!
+        x = self.preprocessor(x)
+        return self.classifier(x)
