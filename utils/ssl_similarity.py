@@ -136,7 +136,7 @@ def main(args):
         cosine_similarities = (idx_feat @ ssl_features.T) / (torch.norm(idx_feat, p=2, dim=-1)*torch.norm(ssl_features, p=2, dim=-1))
         available_indices = targets != targets[idx]
         for closest_idx in cosine_similarities.argsort(descending=True):
-            if available_indices[closest_idx]:
+            if available_indices[closest_idx] and targets[closest_idx.item()].cpu().item() not in closest_pairs[idx]:
                 closest_pairs[idx].append(targets[closest_idx.item()].cpu().item())
             if len(closest_pairs[idx]) == args.n_closest:
                 random.shuffle(closest_pairs[idx])
