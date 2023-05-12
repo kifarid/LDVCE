@@ -4,12 +4,12 @@ import yaml
 import os
 import glob
 
-from scripts.compute_fid import compute_fid
-from scripts.compute_FVA import compute_fva
-from scripts.compute_FS import compute_fs
-from scripts.compute_MNAC import compute_mnac
-from scripts.compute_CD import compute_cd
-from scripts.compute_COUT import compute_cout
+from eval_utils.compute_fid import compute_fid
+from eval_utils.compute_FVA import compute_fva
+from eval_utils.compute_FS import compute_fs
+from eval_utils.compute_MNAC import compute_mnac
+from eval_utils.compute_CD import compute_cd
+from eval_utils.compute_COUT import compute_cout
 
 
 if __name__ == "__main__":

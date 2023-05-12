@@ -1,8 +1,8 @@
 from argparse import Namespace
 import numpy as np
-from scripts.compute_COUT import compute_cout
-from scripts.compute_fid import compute_fid
-from scripts.compute_SimSiamSimilarity import compute_s3
+from eval_utils.compute_COUT import compute_cout
+from eval_utils.compute_fid import compute_fid
+from eval_utils.compute_SimSiamSimilarity import compute_s3
 import os
 import glob
 import torch
