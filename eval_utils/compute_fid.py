@@ -7,6 +7,7 @@ import random
 import subprocess
 import numpy as np
 import torch
+from tqdm import tqdm
 
 def compute_fid(args):
     if not args.sfid: # FID computation
@@ -55,7 +56,7 @@ def compute_fid(args):
 
             # read all
             classes_to_paths = {}
-            for pth_file in sorted(glob.glob(args.output_path + "/bucket*/*.pth")):
+            for pth_file in tqdm(sorted(glob.glob(args.output_path + "/bucket*/*.pth")), leave=False):
                 if not os.path.basename(pth_file)[:-4].isdigit():
                     continue
                 data = torch.load(pth_file, map_location="cpu")

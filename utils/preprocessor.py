@@ -20,6 +20,18 @@ class Normalizer(torch.nn.Module):
         x = (x - self.mu) / self.sigma
         return self.classifier(x)
 
+class Crop(torch.nn.Module):
+    def __init__(self, classifier, crop_size: int=224) -> None:
+        super().__init__()
+        self.classifier = classifier
+        self.crop_size = crop_size
+        self.center_crop = torchvision.transforms.CenterCrop(crop_size)
+
+    def forward(self, x):
+        # assumes x in [0, 1]!
+        x = self.center_crop(x)
+        return self.classifier(x)
+
 class CropAndNormalizer(torch.nn.Module):
     def __init__(self, classifier, crop_size: int=224, mu=[0.485, 0.456, 0.406], sigma=[0.229, 0.224, 0.225]) -> None:
         super().__init__()

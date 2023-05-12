@@ -105,5 +105,5 @@ if __name__ == '__main__':
 
     print('FVA', np.mean(results[0]))
     print('FVA (STD)', np.std(results[0]))
-    print('mean dist', np.mean(results[1]))
+    print('FS mean dist', np.mean(results[1]))
     print('std dist', np.std(results[1]))

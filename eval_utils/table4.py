@@ -1,12 +1,8 @@
 from argparse import Namespace, ArgumentParser
 import numpy as np
-import yaml 
-import os
-import glob
 
 from eval_utils.compute_fid import compute_fid
 from eval_utils.compute_FVA import compute_fva
-from eval_utils.compute_FS import compute_fs
 from eval_utils.compute_MNAC import compute_mnac
 from eval_utils.compute_CD import compute_cd
 from eval_utils.compute_COUT import compute_cout
@@ -14,16 +10,14 @@ from eval_utils.compute_COUT import compute_cout
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--path", type=str, default="/misc/lmbraid21/faridk/celeb_smile_new")
+    parser.add_argument("--path", type=str, default="/misc/lmbraid21/faridk/celeb/celeb_smile_new")
     args = parser.parse_args()
     path = args.path
     #load config.yaml file from data subdirectories
     
 
-    config = yaml.load(open(glob.glob(args.path + '/**/config.yaml', recursive=True)[0], "r"), Loader=yaml.FullLoader)
-    query_label = config["data"]["query_label"]
-
-
+    #config = yaml.load(open(glob.glob(args.path + '/**/config.yaml', recursive=True)[0], "r"), Loader=yaml.FullLoader)
+    #query_label = config["data"]["query_label"]
 
 for query_label in [query_label]:
     # FID
@@ -51,17 +45,18 @@ for query_label in [query_label]:
         "weights_path": "/misc/lmbraid21/schrodi/pretrained_models/vggface2_resnet50_ft.pkl",
         "batch_size": 15,
     }
-    fva = compute_fva(Namespace(**args))
-    print("FVA:", round(np.mean(fva[0])*100, 1))
+    fva, fs = compute_fva(Namespace(**args))
+    print("FVA:", round(np.mean(fva)*100, 1))
 
     # FS
-    args = {
-        "output_path": path,
-        "weights_path": "/misc/lmbraid21/schrodi/pretrained_models/simsiam_checkpoint_0099.pth.tar",
-        "batch_size": 15,
-    }
-    fs = compute_fs(Namespace(**args))
-    print("FS:", round(np.mean(fs).item(), 4))
+    # args = {
+    #     "output_path": path,
+    #     # "weights_path": "/misc/lmbraid21/schrodi/pretrained_models/simsiam_checkpoint_0099.pth.tar",
+    #     "weights_path": "/misc/lmbraid21/schrodi/pretrained_models/vggface2_resnet50_ft.pkl",
+    #     "batch_size": 15,
+    # }
+    # fs = compute_fs(Namespace(**args))
+    print("FS:", round(np.mean(fs), 4))
 
     # MNAC
     args = {
