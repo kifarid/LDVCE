@@ -21,7 +21,7 @@ log_rate: 1
 
 data:
   _target_: data.datasets.Flowers102
-  data_dir: "/misc/lmbraid21/schrodi/datasets"
+  root: "/misc/lmbraid21/schrodi/datasets"
   shard: 0
   num_shards: 1
   batch_size: 1

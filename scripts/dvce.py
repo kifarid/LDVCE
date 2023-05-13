@@ -41,7 +41,6 @@ from ldm import *
 from ldm.models.diffusion.cc_ddim import CCMDDIMSampler
 
 from data.imagenet_classnames import name_map, openai_imagenet_classes
-from data.datasets import GenericIndex
 
 try:
     import open_clip
@@ -180,8 +179,13 @@ def get_dataset(cfg, last_data_idx: int = 0):
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
         ])
-        target_transform = lambda x: x-1
-        dataset = GenericIndex(torchvision.datasets.Flowers102(root=cfg.data.data_dir, split="test", transform=transform, target_transform=target_transform, download=True))
+        dataset = instantiate(
+            cfg.data, 
+            shard=cfg.data.shard, 
+            num_shards=cfg.data.num_shards, 
+            transform=transform, 
+            restart_idx=last_data_idx
+        )
     elif "OxfordIIIPets" in cfg.data._target_: # try running on 224x224 img
         def _convert_to_rgb(image):
             return image.convert('RGB')
@@ -193,7 +197,13 @@ def get_dataset(cfg, last_data_idx: int = 0):
             transforms.ToTensor(),
         ]
         transform = transforms.Compose(transform_list)
-        dataset = GenericIndex(torchvision.datasets.OxfordIIITPet(root=cfg.data.data_dir, split="test", target_types="category", transform=transform, download=True))
+        dataset = instantiate(
+            cfg.data, 
+            shard=cfg.data.shard, 
+            num_shards=cfg.data.num_shards, 
+            transform=transform, 
+            restart_idx=last_data_idx
+        )
     else:
         raise NotImplementedError
     return dataset
@@ -308,7 +318,7 @@ def main(cfg : DictConfig) -> None:
     #data_path = cfg.data_path
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1) # TODO!
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
 
     if "ImageNet" in cfg.data._target_:
         i2h = name_map

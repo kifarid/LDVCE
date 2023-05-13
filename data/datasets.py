@@ -473,10 +473,31 @@ class CUB(Dataset):
         """
         return [self.class_name(i) for i in range(self.N_CLASSES)]
 
-class GenericIndex(Dataset):
-    def __init__(self, dataset) -> None:
+class Flowers102(Dataset):
+    def __init__(self, root, transform, shard: int = 0, num_shards: int = 1, **kwargs) -> None:
         super().__init__()
-        self.dataset = dataset
+        target_transform = lambda x: x-1 # flowers starts from idx 1
+        self.dataset = datasets.Flowers102(root=root, split="test", transform=transform, target_transform=target_transform, download=True)
+
+        # compute shards
+        self.dataset._image_files = self.dataset._image_files[shard::num_shards]
+        self.dataset._labels = self.dataset._labels[shard::num_shards]
+    
+    def __getitem__(self, index: Any) -> Any:
+        img, label = self.dataset.__getitem__(index)
+        return img, label, index
+    
+    def __len__(self):
+        return len(self.dataset)
+    
+class OxfordIIIPets(Dataset):
+    def __init__(self, root, transform, shard: int = 0, num_shards: int = 1, **kwargs) -> None:
+        super().__init__()
+        self.dataset = datasets.OxfordIIITPet(root=root, split="test", target_types="category", transform=transform, download=True)
+
+        # compute shards
+        self.dataset._images = self.dataset._images[shard::num_shards]
+        self.dataset._labels = self.dataset._labels[shard::num_shards]
     
     def __getitem__(self, index: Any) -> Any:
         img, label = self.dataset.__getitem__(index)
