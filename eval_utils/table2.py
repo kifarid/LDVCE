@@ -4,7 +4,8 @@ from eval_utils.compute_lpnorms import compute_lp_norms
 from eval_utils.compute_VQGAN import compute_vqgan
 from eval_utils.compute_fid import compute_fid
 
-path = "/misc/lmbraid21/faridk/LDCE_w382_cc23" # LDCE (ours)
+#path = "/misc/lmbraid21/faridk/LDCE_w382_cc23" # LDCE (ours)
+path = "/misc/lmbraid21/faridk/testing/LDCE_sd"
 # path = "/misc/lmbraid21/faridk/ImageNetDVCEs_" # DVCE
 # path = "/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly" # SVCE-robust
 path = "/misc/lmbraid21/faridk/ImageNetSVCEs_non_robust"  # SVCE-non robust

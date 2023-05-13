@@ -13,7 +13,7 @@ classifier_model:
 
 
 n_samples_per_class: #2
-strength: 0.342 #0.322 #0.382 #0.34 #0.3 #28 #0.25
+strength: 0.382 #0.322 #0.382 #0.34 #0.3 #28 #0.25
 scale: 3 #2.45 #2.85
 ddim_steps: 500 #500 #375 
 ddim_eta: 0.
@@ -35,15 +35,15 @@ sampler:
   enforce_same_norms: True
   guidance: "projected"
   cone_projection_type: "zero_binning"
-  classifier_lambda: 2.0 #3.3
-  dist_lambda: 0.25
+  classifier_lambda: 2.3 #3.3
+  dist_lambda: 0.3
   masked_guidance: False
   backprop_diffusion: True   
   lp_custom: 1
-  deg_cone_projection: 40.
+  deg_cone_projection: 45.
 
 
-lmb_username: 'schrodi'
+lmb_username: 'faridk'
 wandb:
   entity: 'kifarid'
   enabled: False
