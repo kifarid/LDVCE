@@ -7,31 +7,33 @@ from tqdm import tqdm
 from torch.utils.data import DataLoader
 
 n_epochs = 1000
+also_train = False
 train_path = '/misc/lmbraid21/schrodi/concepts/data/cub/CUB_processed/class_attr_data_10/train.pkl'
 val_path = '/misc/lmbraid21/schrodi/concepts/data/cub/CUB_processed/class_attr_data_10/val.pkl'
 test_path = '/misc/lmbraid21/schrodi/concepts/data/cub/CUB_processed/class_attr_data_10/test.pkl'
 
-
 device = torch.device("cuda")
-train_transform = transform = transforms.Compose([
-            transforms.ColorJitter(brightness=32 / 255, saturation=(0.5, 1.5)),
-            transforms.RandomResizedCrop(299),
-            transforms.RandomHorizontalFlip(),
-            transforms.ToTensor(),  # implicitly divides by 255
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        ])
-train_set = CUB([train_path, val_path], use_attr=False, batch_size=64, image_dir='/misc/lmbraid21/schrodi/concepts/data/cub/CUB_200_2011', no_img=False ,uncertain_label=False, n_class_attr=-1, transform=train_transform)
-train_loader = DataLoader(train_set, batch_size=64, shuffle=True, drop_last=True, num_workers=16)
-resized_resol = int(299 * 256 / 224)
-test_transform = transform = transforms.Compose([
-    transforms.Resize((resized_resol, resized_resol)),
-    transforms.ToTensor(),  # implicitly divides by 255
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
-test_set = CUB([test_path], use_attr=False, batch_size=64, image_dir='/misc/lmbraid21/schrodi/concepts/data/cub/CUB_200_2011', no_img=False,uncertain_label=False, n_class_attr=-1, transform=test_transform)
-test_loader = DataLoader(test_set, batch_size=64, shuffle=False, drop_last=False, num_workers=16)
-model = CUBInception(name="cub_inception_model")
-#model.fit(device, train_loader, test_loader, "/misc/lmbraid21/schrodi/pretrained_models", patience=50, n_epoch=n_epochs)
+
+if also_train:
+    train_transform = transform = transforms.Compose([
+                transforms.ColorJitter(brightness=32 / 255, saturation=(0.5, 1.5)),
+                transforms.RandomResizedCrop(299),
+                transforms.RandomHorizontalFlip(),
+                transforms.ToTensor(),  # implicitly divides by 255
+                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+            ])
+    train_set = CUB([train_path, val_path], use_attr=False, batch_size=64, image_dir='/misc/lmbraid21/schrodi/concepts/data/cub/CUB_200_2011', no_img=False ,uncertain_label=False, n_class_attr=-1, transform=train_transform)
+    train_loader = DataLoader(train_set, batch_size=64, shuffle=True, drop_last=True, num_workers=16)
+    resized_resol = int(299 * 256 / 224)
+    test_transform = transform = transforms.Compose([
+        transforms.Resize((resized_resol, resized_resol)),
+        transforms.ToTensor(),  # implicitly divides by 255
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    test_set = CUB([test_path], use_attr=False, batch_size=64, image_dir='/misc/lmbraid21/schrodi/concepts/data/cub/CUB_200_2011', no_img=False,uncertain_label=False, n_class_attr=-1, transform=test_transform)
+    test_loader = DataLoader(test_set, batch_size=64, shuffle=False, drop_last=False, num_workers=16)
+    model = CUBInception(name="cub_inception_model")
+    model.fit(device, train_loader, test_loader, "/misc/lmbraid21/schrodi/pretrained_models", patience=50, n_epoch=n_epochs)
 
 transform = transforms.Compose([
     transforms.Resize((256, 256)),
@@ -68,4 +70,3 @@ with torch.inference_mode():
         train_acc += torch.sum(pred == label)
 final_acc = train_acc/len(dataset)
 print(final_acc.item())
-
