@@ -1,8 +1,8 @@
 from argparse import Namespace
 
-from compute_lpnorms import compute_lp_norms
-from compute_validity_metrics import compute_validity_metrics
-from compute_fid import compute_fid
+from eval_utils.compute_lpnorms import compute_lp_norms
+from eval_utils.compute_validity_metrics import compute_validity_metrics
+from eval_utils.compute_fid import compute_fid
 
 #path = "/misc/lmbraid21/faridk/LDCE_w382_cc23" # LDCE (ours)
 path = "/misc/lmbraid21/faridk/testing/LDCE_sd"
