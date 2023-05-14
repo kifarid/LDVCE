@@ -23,6 +23,11 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 python -m scripts.dvce --config-name=v8_robust_sd\
     data.batch_size=4 \
     strength=0.382 \
+    sampler.guidance=projected \
+    sampler.classifier_lambda=3.4 \
+    sampler.dist_lambda=1.2 \
+    sampler.cone_projection_type=binning \
+    sampler.deg_cone_projection=45. \
     output_dir=/misc/lmbraid21/faridk/ldvce_robust_sd \
     data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/ldvce_robust_sd_$PBS_ARRAYID.log 
 

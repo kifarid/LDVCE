@@ -35,8 +35,8 @@ sampler:
   enforce_same_norms: True
   guidance: "projected"
   cone_projection_type: "zero_binning"
-  classifier_lambda: 2.3 #3.3
-  dist_lambda: 0.3
+  classifier_lambda: 3.4 #3.3
+  dist_lambda: 1.2
   masked_guidance: False
   backprop_diffusion: True   
   lp_custom: 1

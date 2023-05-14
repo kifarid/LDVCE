@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N ldvces_cc_l2
+#PBS -N ldvces_cc_l2_sd
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
@@ -26,7 +26,9 @@ python -m scripts.dvce --config-name=v8_cc \
     sampler.classifier_lambda=2.3 \
     sampler.dist_lambda=0.3 \
     sampler.lp_custom=2 \
-    output_dir=/misc/lmbraid21/faridk/LDCE_cc_ws_l2 > logs/no_cone_cc_ws_l2.log 
+    diffusion_model.cfg_path="configs/stable-diffusion/v1-inference.yaml" \
+    diffusion_model.ckpt_path="/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" \
+    output_dir=/misc/lmbraid21/faridk/LDCE_cc_ws_l2_sd > logs/no_cone_cc_ws_l2_sd.log 
 
 exit 0
 

@@ -302,6 +302,7 @@ def main(cfg : DictConfig) -> None:
     assert len(sampler.ddim_timesteps) == ddim_steps, "ddim_steps should be equal to len(sampler.ddim_timesteps)"
     n_samples_per_class = cfg.n_samples_per_class
     batch_size = cfg.data.batch_size
+    shuffle = cfg.get("shuffle", False)
       
 
     #save config to the output directory
@@ -318,7 +319,7 @@ def main(cfg : DictConfig) -> None:
     #data_path = cfg.data_path
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
-    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
+    data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=1)
 
     if "ImageNet" in cfg.data._target_:
         i2h = name_map
