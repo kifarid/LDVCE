@@ -6,7 +6,7 @@
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 8
+#PBS -t 9
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -27,7 +27,7 @@ python -m scripts.dvce --config-name=v8_stable_diffusion \
     sampler.dist_lambda=1.2 \
     sampler.cone_projection_type=binning \
     sampler.deg_cone_projection=45. \
-    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/LDCE_sd_testing_${PBS_ARRAYID}.log 
+    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/LDCE_sd_${PBS_ARRAYID}.log 
 
 exit 0
 

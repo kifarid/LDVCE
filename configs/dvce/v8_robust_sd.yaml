@@ -4,8 +4,8 @@ record_intermediate: False
 output_dir: /misc/lmbraid21/schrodi/counterfactual/debug
 
 diffusion_model:
-  cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
-  ckpt_path: "models/ldm/cin256-v2/model.ckpt"
+  cfg_path: "configs/stable-diffusion/v1-inference.yaml"
+  ckpt_path: "/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" # miniSD https://huggingface.co/justinpinkney/miniSD/tree/main
 
 seg_model:
 classifier_model:
@@ -27,7 +27,7 @@ data:
   idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
   split: 'val'
   return_tgt_cls: True
-  batch_size: 5
+  batch_size: 4
   start_sample: 0
   end_sample: 10
 
