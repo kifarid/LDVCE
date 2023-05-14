@@ -52,6 +52,7 @@ from utils.preprocessor import Normalizer, CropAndNormalizer, ResizeAndNormalize
 from utils.cub_inception import CUBInception
 from utils.vision_language_wrapper import VisionLanguageWrapper
 from utils.madry_net import MadryNet
+from utils.dino_linear import LinearClassifier, DINOLinear
 
 # sys.path.append(".")
 # sys.path.append('./taming-transformers')
@@ -105,7 +106,14 @@ def get_classifier(cfg, device):
             classifier_model = ResizeAndNormalizer(classifier_model, resolution=(resized_resol, resized_resol))
     elif "Flowers102" in cfg.data._target_:
         # fine-tuned Dino ViT B/8: https://arxiv.org/pdf/2104.14294.pdf
-        raise NotImplementedError
+        dino = torch.hub.load('facebookresearch/dino:main', 'dino_vits8').to(device).eval()
+        dim = dino.embed_dim
+        linear_classifier = LinearClassifier(dim*cfg.classifier_model.n_last_blocks, 102)
+        linear_classifier.load_state_dict(torch.load(cfg.classifier_model.classifier_path, map_location="cpu"), strict=True)
+        linear_classifier = linear_classifier.eval().to(device)
+        classifier_model = DINOLinear(dino, linear_classifier)
+        transforms_list = [transforms.CenterCrop(224), transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))]
+        classifier_model = GenericPreprocessing(classifier_model, transforms.Compose(transforms_list))
     elif "OxfordIIIPets" in cfg.data._target_:
         # zero-shot OpenClip: https://arxiv.org/pdf/2212.07143.pdf
         model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
@@ -171,9 +179,14 @@ def get_dataset(cfg, last_data_idx: int = 0):
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
         ])
-        target_transform = lambda x: x-1
-        dataset = torchvision.datasets.Flowers102(root=cfg.data.data_dir, split="test", transform=transform, target_transform=target_transform, download=True)
-    elif "OxfordIIIPets" in cfg.data._target: # try running on 224x224 img
+        dataset = instantiate(
+            cfg.data, 
+            shard=cfg.data.shard, 
+            num_shards=cfg.data.num_shards, 
+            transform=transform, 
+            restart_idx=last_data_idx
+        )
+    elif "OxfordIIIPets" in cfg.data._target_: # try running on 224x224 img
         def _convert_to_rgb(image):
             return image.convert('RGB')
         out_size = 256
@@ -184,7 +197,13 @@ def get_dataset(cfg, last_data_idx: int = 0):
             transforms.ToTensor(),
         ]
         transform = transforms.Compose(transform_list)
-        dataset = torchvision.datasets.OxfordIIITPet(root=cfg.data.data_dir, split="test", target_types="category", transform=transform, download=True)
+        dataset = instantiate(
+            cfg.data, 
+            shard=cfg.data.shard, 
+            num_shards=cfg.data.num_shards, 
+            transform=transform, 
+            restart_idx=last_data_idx
+        )
     else:
         raise NotImplementedError
     return dataset
@@ -294,7 +313,7 @@ def main(cfg : DictConfig) -> None:
         with open(os.path.join(out_dir, "config.yaml"), 'w') as f:
             print("saving config to ", os.path.join(out_dir, "config.yaml  ..."))
             yaml.dump(config, f)
-        
+            os.chmod(os.path.join(out_dir, "config.yaml"), 0o555)
     
     #data_path = cfg.data_path
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
@@ -323,7 +342,7 @@ def main(cfg : DictConfig) -> None:
     elif "OxfordIIIPets" in cfg.data._target_:
         with open("data/pets_idx_to_label.json", "r") as f:
             pets_idx_to_classname = json.load(f)
-        i2h = pets_idx_to_classname
+        i2h = {int(k): v for k, v in pets_idx_to_classname.items()}
     else:
         raise NotImplementedError
 
@@ -333,12 +352,15 @@ def main(cfg : DictConfig) -> None:
     elif "CUB" in cfg.data._target_:
         with open("data/cub_closest_indices.json") as file:
             closest_indices = json.load(file)
+        closest_indices = {int(k):v for k,v in closest_indices.items()}
     elif "Flowers102" in cfg.data._target_:
         with open("data/flowers_closest_indices.json") as file:
             closest_indices = json.load(file)
+        closest_indices = {int(k):v for k,v in closest_indices.items()}
     elif "OxfordIIIPets" in cfg.data._target_:
         with open("data/pets_closest_indices.json") as file:
             closest_indices = json.load(file)
+        closest_indices = {int(k):v for k,v in closest_indices.items()}
 
     if not cfg.resume:
         torch.save({"last_data_idx": -1}, checkpoint_path)
@@ -361,8 +383,8 @@ def main(cfg : DictConfig) -> None:
                 tgt_classes = torch.tensor([random.choice(synset_closest_idx[l.item()]) for l in label]).to(device)
             elif "CelebAHQDataset" in cfg.data._target_:
                 tgt_classes = (1 - label).type(torch.float32)
-            elif "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target or "OxfordIIIPets" in cfg.data._target_:
-                tgt_classes = torch.tensor([closest_indices[unique_data_idx][0] for _ in range(label.shape[0])]).to(device)
+            elif "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_:
+                tgt_classes = torch.tensor([closest_indices[unique_data_idx[l].item()][0] for l in range(label.shape[0])]).to(device)
             else:
                 raise NotImplementedError
 

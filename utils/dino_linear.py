@@ -1,10 +1,10 @@
 from torch import nn
 
 class DINOLinear(nn.Module):
-    def __init__(self, dino, dim, num_labels=1000) -> None:
+    def __init__(self, dino, linear_classifier) -> None:
         super().__init__()
         self.dino = dino
-        self.linear = LinearClassifier(dim, num_labels)
+        self.linear = linear_classifier
     
     def forward(self, x):
         x = self.dino(x)
