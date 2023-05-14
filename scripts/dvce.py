@@ -229,10 +229,8 @@ def main(cfg : DictConfig) -> None:
     os.chmod(cfg.output_dir, 0o777)
     if "ImageNet" in cfg.data._target_:
         out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.start_sample}_{cfg.data.end_sample}")
-    elif "CelebAHQDataset" in cfg.data._target_:
-        out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.shard}_{cfg.data.num_shards}")
     else:
-        out_dir = os.path.join(cfg.output_dir)
+        out_dir = os.path.join(cfg.output_dir, f"bucket_{cfg.data.shard}_{cfg.data.num_shards}")
     os.makedirs(out_dir, exist_ok=True)
     os.chmod(out_dir, 0o777)
     checkpoint_path = os.path.join(out_dir, "last_saved_id.pth")
@@ -240,10 +238,8 @@ def main(cfg : DictConfig) -> None:
     config = {}
     if "ImageNet" in cfg.data._target_:
         run_id = f"{cfg.data.start_sample}_{cfg.data.end_sample}"
-    elif "CelebAHQDataset" in cfg.data._target_ or "CUB" in cfg.data._target_:
-        run_id = f"{cfg.data.shard}_{cfg.data.num_shards}"
     else:
-        run_id = "all"
+        run_id = f"{cfg.data.shard}_{cfg.data.num_shards}"
     if cfg.resume:
         print("run ID to resume: ", run_id)
     else:
