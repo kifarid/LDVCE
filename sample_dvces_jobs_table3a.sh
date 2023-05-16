@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N ldvces_zs_l2_sd
+#PBS -N ldvces_zs_l1_sd
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
@@ -20,15 +20,17 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 
 python -m scripts.dvce --config-name=v8_zs\
-    data.batch_size=5 \
+    data.batch_size=4 \
     strength=0.382 \
+    sampler.guidance=projected \
+    sampler.classifier_lambda=3.4 \
+    sampler.dist_lambda=1.2 \
+    sampler.cone_projection_type=binning \
     sampler.deg_cone_projection=45. \
-    sampler.classifier_lambda=2.3 \
-    sampler.dist_lambda=0.3 \
-    sampler.lp_custom=2 \
+    sampler.lp_custom=1 \
     diffusion_model.cfg_path="configs/stable-diffusion/v1-inference.yaml" \
     diffusion_model.ckpt_path="/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" \
-    output_dir=/misc/lmbraid21/faridk/LDCE_zs_ws_l2_sd > logs/no_cone_zs_ws_l2_sd.log 
+    output_dir=/misc/lmbraid21/faridk/LDCE_zs_ws_l1_sd > logs/no_cone_zs_ws_l1_sd.log 
 
 exit 0
 
