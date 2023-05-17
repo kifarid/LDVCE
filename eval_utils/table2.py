@@ -5,10 +5,13 @@ from eval_utils.compute_VQGAN import compute_vqgan
 from eval_utils.compute_fid import compute_fid
 
 #path = "/misc/lmbraid21/faridk/LDCE_w382_cc23" # LDCE (ours)
-path = "/misc/lmbraid21/faridk/testing/LDCE_sd"
+#path = "/misc/lmbraid21/faridk/testing/LDCE_sd"
 # path = "/misc/lmbraid21/faridk/ImageNetDVCEs_" # DVCE
 # path = "/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly" # SVCE-robust
-path = "/misc/lmbraid21/faridk/ImageNetSVCEs_non_robust"  # SVCE-non robust
+#path = "/misc/lmbraid21/faridk/ImageNetSVCEs_non_robust"  # SVCE-non robust
+#path = "/misc/lmbraid21/faridk/ldvce_robust" # LDCE-cls. cond. - robust ResNet-50
+#path = "/misc/lmbraid21/faridk/ldvce_robust_sd" # LDCE-text cond. - robust ResNet-50
+path = "/misc/lmbraid21/faridk/LDCE_sd" # LDCE-text cond.
 
 # L1 & L2
 args = {
@@ -47,7 +50,7 @@ args = {
         "class_balanced": True,
     }
 fid = compute_fid(Namespace(**args))
-print("FID:", round(fid, 1))
+print("FID:", round(fid, 2))
 
 # sFID
 args = {
@@ -57,4 +60,4 @@ args = {
         "class_balanced": True,
     }
 fid = compute_fid(Namespace(**args))
-print("sFID:", round(fid, 1))  
+print("sFID:", round(fid, 2))  
