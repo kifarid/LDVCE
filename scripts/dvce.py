@@ -381,7 +381,8 @@ def main(cfg : DictConfig) -> None:
             elif "CelebAHQDataset" in cfg.data._target_:
                 tgt_classes = (1 - label).type(torch.float32)
             elif "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_:
-                tgt_classes = torch.tensor([closest_indices[unique_data_idx[l].item()][0] for l in range(label.shape[0])]).to(device)
+                # tgt_classes = torch.tensor([closest_indices[unique_data_idx[l].item()][0] for l in range(label.shape[0])]).to(device)
+                tgt_classes = torch.tensor([closest_indices[unique_data_idx[l].item()*cfg.data.num_shards + cfg.data.shard][0] for l in range(label.shape[0])]).to(device)
             else:
                 raise NotImplementedError
 
