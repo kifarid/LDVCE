@@ -161,6 +161,80 @@ class ImageNetSelect(datasets.ImageFolder):
             return *sample, self.lbl_to_tgt_cls_map[sample[-1]], index + self.start_sample + self.restart_idx
         else:
             return sample
+        
+class ImageNetIndicies(datasets.ImageFolder):
+    classes = [name_map[i] for i in range(1000)]
+    name_map = name_map
+
+    def __init__(
+            self, 
+            root:str, 
+            split:str="val", 
+            transform=None, 
+            target_transform=None, 
+            image_idcs=None,
+            return_tgt_cls: bool = False,
+            idx_to_tgt_cls_path = None,
+            restart_idx: int = 0, 
+            start_sample: float = 0., 
+            end_sample: int = 50000//1000,
+            **kwargs
+    ):
+        _ = kwargs  # Just for consistency with other datasets.
+        print(f"Loading ImageNet for indicies {image_idcs}")
+        assert split in ["train", "val"]
+        print(f"Loading ImageNet with start_sample={start_sample}, end_sample={end_sample} ")
+        assert start_sample < end_sample and start_sample >= 0 and end_sample <= 50000//1000
+        self.start_sample = start_sample
+
+        assert 0 <= restart_idx < 50000
+        self.restart_idx = restart_idx
+
+        path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
+        super().__init__(path, transform=transform, target_transform=target_transform)
+        
+        with open(idx_to_tgt_cls_path, 'r') as file:
+            idx_to_tgt_cls = yaml.safe_load(file)
+            if isinstance(idx_to_tgt_cls, dict):
+                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
+        self.idx_to_tgt_cls = idx_to_tgt_cls
+
+        self.return_tgt_cls = return_tgt_cls
+        self.image_idcs = image_idcs
+
+            
+        if "val" == split: # reorder
+            new_samples = []
+            idx_to_tgt_cls = []
+            for idx in range(50000//1000):
+                new_samples.extend(self.samples[idx::50000//1000])
+                idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
+            self.samples = new_samples[int(start_sample*1000):end_sample*1000]
+            self.idx_to_tgt_cls = idx_to_tgt_cls[int(start_sample*1000):end_sample*1000]
+
+            new_samples = []
+            idx_to_tgt_cls = []
+            if image_idcs is not None:
+                new_samples = [self.samples[i] for i in image_idcs]
+                new_idx_to_tgt_cls = [self.idx_to_tgt_cls[i] for i in image_idcs]
+                self.samples = new_samples
+                self.idx_to_tgt_cls = new_idx_to_tgt_cls
+
+        else:
+            raise NotImplementedError("Only implemented for val set")
+        
+        if self.restart_idx > 0:
+            self.samples = self.samples[self.restart_idx:]
+
+        self.class_labels = {i: folder_label_map[folder] for i, folder in enumerate(self.classes)}
+        self.targets = np.array(self.samples)[:, 1]
+    
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+        if self.return_tgt_cls:
+            return *sample, self.idx_to_tgt_cls[index], index + self.start_sample*1000 + self.restart_idx
+        else:
+            return sample
 
 class CelebADataset(Dataset):
     def __init__(

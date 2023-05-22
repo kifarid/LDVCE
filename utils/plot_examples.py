@@ -11,7 +11,7 @@ from utils.fig_utils import get_concat_h
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_age"
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_smile_new"
 #base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
-base_path = "/misc/lmbraid21/faridk/LDCE_sd"
+base_path = "/misc/lmbraid21/faridk/ldvce_pets_58_32"
 save_path = os.path.join(base_path, "examples")
 
 os.makedirs(save_path, exist_ok=True)
