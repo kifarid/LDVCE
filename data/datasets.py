@@ -408,6 +408,110 @@ class CelebAHQDataset(Dataset):
         else:
             return img, {}, self.restart_idx + idx
         
+
+class CelebAHQDatasetSelect(Dataset):
+    def __init__(
+        self,
+        image_size,
+        data_dir,
+        partition,
+        shard=0,
+        num_shards=1,
+        image_idcs = None,
+        class_cond=False,
+        random_crop=True,
+        random_flip=True,
+        query_label=-1,
+        normalize=True,
+        restart_idx: int = 0,
+        **kwargs
+    ):
+        from io import StringIO
+        # read annotation files
+        with open(os.path.join(data_dir, 'CelebAMask-HQ-attribute-anno.txt'), 'r') as f:
+            datastr = f.read()[6:]
+            datastr = 'idx ' +  datastr.replace('  ', ' ')
+
+        with open(os.path.join(data_dir, 'CelebA-HQ-to-CelebA-mapping.txt'), 'r') as f:
+            mapstr = f.read()
+            mapstr = [i for i in mapstr.split(' ') if i != '']
+
+        mapstr = ' '.join(mapstr)
+
+        data = pd.read_csv(StringIO(datastr), sep=' ')
+        partition_df = pd.read_csv(os.path.join(data_dir, 'list_eval_partition.csv'))
+        mapping_df = pd.read_csv(StringIO(mapstr), sep=' ')
+        # mapping_df.rename(columns={'orig_file': 'image_id'}, inplace=True)
+        partition_df = pd.merge(mapping_df, partition_df, on='idx')
+
+        self.data_dir = data_dir
+
+        if partition == 'train':
+            partition = 0
+        elif partition == 'val':
+            partition = 1
+        elif partition == 'test':
+            partition = 2
+        else:
+            raise ValueError(f'Unkown partition {partition}')
+
+        self.data = data[partition_df['split'] == partition]
+        self.data = self.data[shard::num_shards]
+        self.data.reset_index(inplace=True)
+        self.data.replace(-1, 0, inplace=True)
+
+        self.image_idcs = image_idcs
+
+        if self.image_idcs is not None:
+            self.data = self.data.iloc[self.image_idcs]
+            self.data.reset_index(inplace=True)
+
+        self.transform = transforms.Compose([
+            transforms.Resize(image_size),
+            transforms.RandomHorizontalFlip() if random_flip else lambda x: x,
+            transforms.CenterCrop(image_size),
+            transforms.RandomResizedCrop(image_size, (0.95, 1.0)) if random_crop else lambda x: x,
+            transforms.ToTensor(),
+            transforms.Normalize([0.5, 0.5, 0.5],
+                                 [0.5, 0.5, 0.5])  if normalize else lambda x: x
+        ])
+
+        self.query = query_label
+        self.class_cond = class_cond
+
+        self.restart_idx = restart_idx
+        if self.restart_idx > 0:
+            self.data = self.data.iloc[self.restart_idx:]
+            self.data.reset_index(inplace=True)
+            self.data.replace(-1, 0, inplace=True)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        sample = self.data.iloc[idx, :]
+        labels = sample[3:].to_numpy()
+        if self.query != -1:
+            labels = int(labels[self.query])
+        else:
+            labels = torch.from_numpy(labels.astype('float32'))
+        img_file = sample['idx']
+
+        with open(os.path.join(self.data_dir, 'CelebA-HQ-img', img_file), "rb") as f:
+            img = Image.open(f)
+            img = img.convert('RGB')
+
+        img = self.transform(img)
+
+        if self.query != -1:
+            return img, labels, self.restart_idx + idx
+
+        if self.class_cond:
+            return img, labels, self.restart_idx + idx
+        else:
+            return img, {}, self.restart_idx + idx
+  
+
 class CUB(Dataset):
     # Implementation from https://github.com/JonathanCrabbe/CARs
 

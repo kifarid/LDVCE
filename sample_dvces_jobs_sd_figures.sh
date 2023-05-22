@@ -20,7 +20,7 @@ hostname
 
 python -m scripts.dvce --config-name=teaser_images \
     data.batch_size=4 \
-    output_dir=/misc/lmbraid21/faridk/LDCE_sd_figures \
+    output_dir=/misc/lmbraid21/faridk/LDCE_sd_figures_last \
     sampler.classifier_lambda=3.4 \
     sampler.dist_lambda=1.2 \
     sampler.deg_cone_projection=45. > logs/LDCE_sd_figures_${PBS_ARRAYID}.log 

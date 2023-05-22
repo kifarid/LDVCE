@@ -11,7 +11,7 @@ from utils.fig_utils import get_concat_h
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_age"
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_smile_new"
 #base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
-base_path = "/misc/lmbraid21/faridk/ldvce_pets_58_32"
+base_path = "/misc/lmbraid21/faridk/smileee_1"
 save_path = os.path.join(base_path, "examples")
 
 os.makedirs(save_path, exist_ok=True)
@@ -33,6 +33,6 @@ for bucket_folder in tqdm(sorted(glob.glob(base_path + "/bucket*")), leave=False
         counterfactual_img = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
 
         filename = str(counter).zfill(5)
-        outfilepath = os.path.join(save_path, f"{filename}_{source}_{target}.png")
-        get_concat_h(original_img, counterfactual_img).save(outfilepath, dpi=(200, 200))
+        outfilepath = os.path.join(save_path, f"{filename}_{source}_{target}.jpg")
+        get_concat_h(original_img, counterfactual_img).save(outfilepath)
         counter += 1

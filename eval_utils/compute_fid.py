@@ -22,8 +22,11 @@ def compute_fid(args):
         counter = 0
         for bucket_folder in sorted(glob.glob(args.output_path+ "/bucket*")):
             for original_path, counterfactual_path in zip(sorted(glob.glob(bucket_folder + "/original/*")), sorted(glob.glob(bucket_folder + "/counterfactual/*"))):
-                os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
-                os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
+                #check if file already exists
+                if not os.path.exists(os.path.join(real_images_path, f"{counter}.png")):
+                    os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
+                if not os.path.exists(os.path.join(counterfactual_images_path, f"{counter}.png")):
+                    os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
                 counter += 1
 
         import pathlib
@@ -97,12 +100,15 @@ def compute_fid(args):
                 # create symbolic links
                 counter = 0
                 for original_path in split["original"]:
-                    os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
+                    #check if file already exists
+                    if not os.path.exists(os.path.join(real_images_path, f"{counter}.png")):
+                        os.symlink(original_path, os.path.join(real_images_path, f"{counter}.png"))
                     counter += 1
 
                 counter = 0
                 for counterfactual_path in split["counterfactual"]:
-                    os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
+                    if not os.path.exists(os.path.join(counterfactual_images_path, f"{counter}.png")):
+                        os.symlink(counterfactual_path, os.path.join(counterfactual_images_path, f"{counter}.png"))
                     counter += 1
 
                 cmd = ["python", "-m", "pytorch_fid", f"{real_images_path}/", f"{counterfactual_images_path}/", "--device", "cuda"]

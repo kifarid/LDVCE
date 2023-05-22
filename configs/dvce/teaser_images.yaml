@@ -24,18 +24,9 @@ data:
   root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
   idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
   image_idcs:
-    - 22
-    - 414
-    - 425
-    - 1805
-    - 1924
-    - 2414
-    - 2924
-    - 2951
-    - 2975
-    - 3774
-    - 5293
-    - 6926
+    - 8970
+    - 8970
+    - 8970
     - 8970
   batch_size: 4
   start_sample: 0

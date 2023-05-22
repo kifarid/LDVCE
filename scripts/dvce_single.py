@@ -208,7 +208,7 @@ def get_dataset(cfg, last_data_idx: int = 0):
         raise NotImplementedError
     return dataset
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_celebAHQ_corrected")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_celebAHQ_corrected.yaml")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
         with open_dict(cfg):
@@ -315,6 +315,8 @@ def main(cfg : DictConfig) -> None:
     #data_path = cfg.data_path
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
+    #get the target index
+    sample = dataset[cfg.index]
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=1)
 
     if "ImageNet" in cfg.data._target_:
