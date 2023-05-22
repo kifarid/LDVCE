@@ -541,7 +541,13 @@ def main(cfg : DictConfig) -> None:
                         "cgs": (255.*all_cgs[0][j]).to(torch.float32).cpu(),
                     }
                     data_dict = dict(data_dict, **cgs_results)
-            dict_save_path = os.path.join(out_dir, f'{str(unique_data_idx[j].item()).zfill(5)}.pth')
+            
+            if "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_:
+                uidx = unique_data_idx[j].item()*cfg.data.num_shards + cfg.data.shard
+            else:
+                uidx = unique_data_idx[j].item()
+            
+            dict_save_path = os.path.join(out_dir, f'{str(uidx).zfill(5)}.pth')
             torch.save(data_dict, dict_save_path)
             os.chmod(dict_save_path, 0o555)
 
@@ -549,11 +555,11 @@ def main(cfg : DictConfig) -> None:
             os.chmod(os.path.join(out_dir, 'original'), 0o777)
             pathlib.Path(os.path.join(out_dir, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
             os.chmod(os.path.join(out_dir, 'counterfactual'), 0o777)
-            orig_save_path = os.path.join(out_dir, 'original', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            orig_save_path = os.path.join(out_dir, 'original', f'{str(uidx).zfill(5)}.png')
             save_image(src_image.clip(0, 1), orig_save_path)
             os.chmod(orig_save_path, 0o555)
 
-            cf_save_path = os.path.join(out_dir, 'counterfactual', f'{str(unique_data_idx[j].item()).zfill(5)}.png')
+            cf_save_path = os.path.join(out_dir, 'counterfactual', f'{str(uidx).zfill(5)}.png')
             save_image(gen_image.clip(0, 1), cf_save_path)
             os.chmod(cf_save_path, 0o555)
 
