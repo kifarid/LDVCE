@@ -12,8 +12,10 @@ from utils.fig_utils import get_concat_h
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_smile_new"
 #base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
 #base_path = "/misc/lmbraid21/faridk/LDCE_sd"
-#base_path = "/misc/lmbraid21/faridk/ldvce_pets_42_24"
-base_path = "/misc/lmbraid21/faridk/ldvce_flowers"
+#base_path = "/misc/lmbraid21/faridk/ldvce_pets_42_24_correct"
+#base_path = "/misc/lmbraid21/faridk/ldvce_flowers_correct_targets"
+#base_path = "/misc/lmbraid21/faridk/celeb_age_corrected_8"
+base_path = "/misc/lmbraid21/faridk/LDCE_sd_correct_3925_50"
 save_path = os.path.join(base_path, "examples")
 
 os.makedirs(save_path, exist_ok=True)

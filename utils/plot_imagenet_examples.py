@@ -7,10 +7,12 @@ from tqdm import tqdm
 from utils.fig_utils import get_concat_h
 
 base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
-base_path_sd = "/misc/lmbraid21/faridk/LDCE_sd"
+base_path_sd = "/misc/lmbraid21/faridk/LDCE_sd_correct_3925_50"
+base_path_no_consensus = "/misc/lmbraid21/faridk/LDCE_w382_cc23_clsg"
 base_path_svce = "/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly"
 base_path_dvce = "/misc/lmbraid21/faridk/ImageNetDVCEs_"
-save_path = "/misc/lmbraid21/faridk/imagenet_comparison"
+#save_path = "/misc/lmbraid21/faridk/imagenet_comparison"
+save_path = "/misc/lmbraid21/faridk/imagenet_appendix"
 
 indices = [
     574, 
@@ -50,17 +52,21 @@ indices = [
 
 os.makedirs(save_path, exist_ok=True)
 os.chmod(save_path, 0o777)
+for tmp in ["correct", "incorrect"]:
+    os.makedirs(os.path.join(save_path, tmp), exist_ok=True)
+    os.chmod(os.path.join(save_path, tmp), 0o777)
 
-bucket_folders = sorted(glob.glob(base_path + "/bucket*"))
+bucket_folders_cls = sorted(glob.glob(base_path + "/bucket*"))
 bucket_folders_sd = sorted(glob.glob(base_path_sd + "/bucket*"))
+bucket_folders_no_consensus = sorted(glob.glob(base_path_no_consensus + "/bucket*"))
 bucket_folders_svce = sorted(glob.glob(base_path_svce + "/bucket*"))
 bucket_folders_dvce = sorted(glob.glob(base_path_dvce + "/bucket*"))
 
 indices = range(10000)
 for idx in tqdm(indices, leave=False):
     bucket_idx = idx // 1000
-    bucket_folder = bucket_folders[bucket_idx]
 
+    bucket_folder = bucket_folders_sd[bucket_idx]
     filename = str(idx).zfill(5)
     data = torch.load(os.path.join(bucket_folder, f"{filename}.pth"), map_location="cpu")
     source, target = data["source"], data["target"]
@@ -68,10 +74,13 @@ for idx in tqdm(indices, leave=False):
     target = target.split(",")[0]
 
     original_img = Image.open(os.path.join(bucket_folder, "original", f"{filename}.png"))
-    counterfactual_img = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
-
-    bucket_folder = bucket_folders_sd[bucket_idx]
     counterfactual_img_sd = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
+
+    bucket_folder = bucket_folders_cls[bucket_idx]
+    counterfactual_img_cls = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
+
+    bucket_folder = bucket_folders_no_consensus[bucket_idx]
+    counterfactual_img_no_consensus = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
 
     bucket_folder = bucket_folders_svce[bucket_idx]
     counterfactual_svce = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
@@ -79,9 +88,10 @@ for idx in tqdm(indices, leave=False):
     bucket_folder = bucket_folders_dvce[bucket_idx]
     counterfactual_dvce = Image.open(os.path.join(bucket_folder, "counterfactual", f"{filename}.png"))
 
-    imgs = [original_img, counterfactual_svce, counterfactual_dvce, counterfactual_img, counterfactual_img_sd]
+    imgs = [original_img, counterfactual_svce, counterfactual_dvce, counterfactual_img_no_consensus, counterfactual_img_cls, counterfactual_img_sd]
 
     #outfilepath = os.path.join(save_path, f"{filename}_{source}_{target}.png")
     #get_concat_h(original_img, counterfactual_img).save(outfilepath, dpi=(200, 200))
-    outfilepath = os.path.join(save_path, f"{filename}_{source}_{target}.jpg")
+    # outfilepath = os.path.join(save_path, f"{filename}_{source}_{target}.jpg")
+    outfilepath = os.path.join(save_path, "correct" if data["out_pred"] == data["target"] else "incorrect", f"{filename}_{source}_{target}.jpg")
     get_concat_h(*imgs).save(outfilepath)
