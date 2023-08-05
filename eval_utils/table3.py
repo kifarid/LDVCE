@@ -10,9 +10,9 @@ import torch
 human_readable = ["zebra-sorrel", "cheetah-cougar", "egyptian-persian cat"]
 base_path = "/misc/lmbraid21/faridk"
 folders = [
-    "LDCE_zs_ws", "LDCE_zs_ws_l1_sd", "LDCE_zs_ws_l2", "LDCE_zs_ws_l2_sd",
-    "LDCE_cc_ws", "LDCE_cc_ws_l1_sd", "LDCE_cc_ws_l2", "LDCE_cc_ws_l2_sd",
-    "LDCE_ep_ws", "LDCE_ep_ws_l1_sd", "LDCE_ep_ws_l2", "LDCE_ep_ws_l2_sd",
+    "LDCE_zs_ws", "LDCE_zs_ws_l1_sd_correct", "LDCE_zs_ws_l2", "LDCE_zs_ws_l2_sd_correct",
+    "LDCE_cc_ws", "LDCE_cc_ws_l1_sd_correct", "LDCE_cc_ws_l2", "LDCE_cc_ws_l2_sd_correct",
+    "LDCE_ep_ws", "LDCE_ep_ws_l1_sd_correct", "LDCE_ep_ws_l2", "LDCE_ep_ws_l2_sd_correct",
 ]
 # zebra, sorrel, cougar, cheetah, egyptian cat, persian cat
 class_indices = [(340, 339), (293, 286), (285, 283)]

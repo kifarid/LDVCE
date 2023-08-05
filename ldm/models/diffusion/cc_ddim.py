@@ -860,7 +860,7 @@ class CCMDDIMSampler(object):
                                             orig_shp=implicit_classifier_score.shape) \
                 if self.guidance == "projected" else classifier_score
             
-            classifier_score = proj_out if self.cone_projection_type == "default" else proj_out[0].view_as(classifier_score)
+            classifier_score = proj_out.view_as(classifier_score) if self.cone_projection_type == "default" else proj_out[0].view_as(classifier_score)
             concensus_region = proj_out[1].unsqueeze(1) if self.cone_projection_type == "binning" else None
             #print(classifier_score.shape, concensus_region.shape)
             if self.enforce_same_norms:

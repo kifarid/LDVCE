@@ -46,6 +46,11 @@ def create_df(data_dir):
                             continue
                         if key not in data_dict:
                             data_dict[key] = []
+                        #check if value is a cuda tensor and convert to numpy array
+                        if isinstance(value, torch.Tensor):
+                            if value.is_cuda:
+                                value = value.cpu()
+                            value = value.numpy()
                         data_dict[key].append(value)
                 #break
     # Create dataframe from data dictionary
@@ -57,7 +62,7 @@ def create_df(data_dir):
 if __name__ == "__main__":
     # Add command line arguments for data directory and table name
     parser = argparse.ArgumentParser(description='Process data directory and table name')
-    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_v8_ws', help='path to data directory')
+    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/LDCE_sd_default/', help='path to data directory')
 
     args = parser.parse_args()
 

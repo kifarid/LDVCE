@@ -23,14 +23,14 @@ python -m scripts.dvce --config-name=v8_ep \
     data.batch_size=4 \
     strength=0.382 \
     sampler.guidance=projected \
-    sampler.classifier_lambda=3.4 \
+    sampler.classifier_lambda=3.95 \
     sampler.dist_lambda=1.2 \
-    sampler.cone_projection_type=binning \
-    sampler.deg_cone_projection=45. \
+    sampler.cone_projection_type=zero_binning \
+    sampler.deg_cone_projection=50. \
     sampler.lp_custom=2 \
     diffusion_model.cfg_path="configs/stable-diffusion/v1-inference.yaml" \
     diffusion_model.ckpt_path="/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" \
-    output_dir=/misc/lmbraid21/faridk/LDCE_ep_ws_l2_sd > logs/no_cone_ep_ws_l2_sd.log 
+    output_dir=/misc/lmbraid21/faridk/LDCE_ep_ws_l2_sd_correct > logs/ep_ws_l2_sd_correct.log 
 
 exit 0
 

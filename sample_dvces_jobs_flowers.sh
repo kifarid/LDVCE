@@ -24,7 +24,7 @@ python -m scripts.dvce --config-name=v8_flowers\
     strength=0.5 \
     sampler.classifier_lambda=3. \
     sampler.dist_lambda=1.2 \
-    output_dir=/misc/lmbraid21/faridk/ldvce_flowers \
+    output_dir=/misc/lmbraid21/faridk/ldvce_flowers_correct_targets \
     data.num_shards=7 \
     data.shard=${PBS_ARRAYID} \
      > logs/ldvce_flowers_${PBS_ARRAYID}.log 

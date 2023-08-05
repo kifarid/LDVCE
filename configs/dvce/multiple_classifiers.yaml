@@ -1,0 +1,125 @@
+resume: False
+checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+record_intermediate: False
+output_dir: /misc/lmbraid21/faridk/debug_multiple_classifiers
+
+diffusion_model:
+  cfg_path: "configs/stable-diffusion/v1-inference.yaml"
+  ckpt_path: "/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" # miniSD https://huggingface.co/justinpinkney/miniSD/tree/main
+
+seg_model:
+classifier_model:
+  name: "resnet50"
+
+
+n_samples_per_class: #2
+strength: 0.382 #0.322 #0.382 #0.34 #0.3 #28 #0.25
+scale: 3 #2.45 #2.85
+ddim_steps: 500 #500 #375 
+ddim_eta: 0.
+log_rate: 1
+seed: 0
+
+data:
+  _target_: data.datasets.ImageNetIndicies
+  root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+  idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
+  image_idcs:
+    - 7
+    - 15
+    - 22
+    - 209
+    - 262
+    - 267
+    - 271
+    - 273
+    - 279
+    - 414
+    - 425
+    - 497
+    - 574
+    - 829
+    - 924
+    - 949
+    - 1004
+    - 1009
+    - 1023
+    - 1289
+    - 1290
+    - 1805
+    - 1852
+    - 1924
+    - 1951
+    - 1955
+    - 2016
+    - 2077
+    - 2306
+    - 2308
+    - 2414
+    - 2429
+    - 2539
+    - 2812
+    - 2924
+    - 2951
+    - 2975
+    - 3276
+    - 3289
+    - 3774
+    - 4023
+    - 4072
+    - 4075
+    - 4964
+    - 5010
+    - 5012
+    - 5013
+    - 5290
+    - 5293
+    - 5296
+    - 6287
+    - 6296
+    - 6367
+    - 6926
+    - 7007
+    - 7075
+    - 7273
+    - 7367
+    - 7768
+    - 7770
+    - 8574
+    - 8970
+    - 9022
+    - 9290
+    - 9306
+    - 9310
+    - 9311
+    - 9340
+    - 9539
+
+  split: 'val'
+  return_tgt_cls: True
+  batch_size: 1
+  start_sample: 0
+  end_sample: 50
+
+sampler:
+  self_recurrence: 0
+  self_recurrence_every_n_steps: 0
+  enforce_same_norms: True
+  guidance: "projected"
+  cone_projection_type: "zero_binning"
+  classifier_lambda: 3.95 #3.3
+  dist_lambda: 1.2
+  masked_guidance: False
+  backprop_diffusion: True   
+  lp_custom: 1
+  deg_cone_projection: 50.
+
+
+lmb_username: 'faridk'
+
+wandb:
+  entity: 'kifarid'
+  enabled: False
+  project: 'cdiff'
+  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+  run_id: debug

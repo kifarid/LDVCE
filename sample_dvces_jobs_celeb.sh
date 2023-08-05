@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N celeb_lvce_age
+#PBS -N celeb_age_more
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
@@ -22,23 +22,22 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 # ddim_steps=(500 500 500)
 
 ddim_steps=500
-strength=0.4 #${strength_list[$PBS_ARRAYID]}
+strength=0.400 #${strength_list[$PBS_ARRAYID]}
 #strength=$(echo "scale=3; 0$strength" | bc)
 # Get the index corresponding to $PBS_ARRAYID
 echo "Selected strength: $strength"
 
 python -m scripts.dvce --config-name=v8_celebAHQ \
     data.batch_size=1 \
-    sampler.guidance=projected \
-    sampler.cone_projection_type=binning \
-    sampler.classifier_lambda=3.8 \
-    sampler.dist_lambda=5.0 \
+    data.query_label=39 \
+    sampler.classifier_lambda=4 \
+    sampler.dist_lambda=3.3\
     data.num_shards=7 \
-    sampler.deg_cone_projection=40. \
+    sampler.deg_cone_projection=55. \
     data.shard=${PBS_ARRAYID} \
     ddim_steps=${ddim_steps} \
-    output_dir=/misc/lmbraid21/faridk/celeb_smile_new \
-    strength=$strength > logs/celeb_smile_new_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
+    output_dir=/misc/lmbraid21/faridk/celeb_age_corrected_8 \
+    strength=$strength > logs/celeb_age_8_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
 
 # python -m scripts.dvce --config-name=v8_celebAHQ \
 #     data.batch_size=1 \

@@ -13,6 +13,7 @@ base_path_svce = "/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly"
 base_path_dvce = "/misc/lmbraid21/faridk/ImageNetDVCEs_"
 #save_path = "/misc/lmbraid21/faridk/imagenet_comparison"
 save_path = "/misc/lmbraid21/faridk/imagenet_appendix"
+save_path = "/misc/lmbraid21/faridk/imagenet_comparison_new"
 
 indices = [
     574, 
