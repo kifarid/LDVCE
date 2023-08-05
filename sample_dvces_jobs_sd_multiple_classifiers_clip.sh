@@ -1,5 +1,5 @@
 #!/bin/bash
-#PBS -N ldvces_cc_l2_sd
+#PBS -N LDVCE_multiple_classifiers_SD
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
@@ -16,21 +16,21 @@ WORKDIR="/misc/student/faridk/stable-diffusion"
 cd $WORKDIR
 echo "QSUB working on: ${WORKDIR}"
 hostname
-echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
+echo generating for ${classifiers_list[$PBS_ARRAYID]}
 
+seed=2
+classifiers_list=("clip" "vit_b_32" "efficientnet_b7" "convnext_base")
 
-python -m scripts.dvce --config-name=v8_cc \
-    data.batch_size=4 \
-    strength=0.382 \
+python -m scripts.dvce --config-name=multiple_classifiers_clip \
+    data.batch_size=1 \
+    output_dir=/misc/lmbraid21/faridk/LDCE_sd_correct_${classifiers_list[$PBS_ARRAYID]}_seed_${seed} \
+    seed=$seed \
+    classifier_model.name=${classifiers_list[$PBS_ARRAYID]} \
     sampler.guidance=projected \
     sampler.classifier_lambda=3.95 \
     sampler.dist_lambda=1.2 \
     sampler.cone_projection_type=zero_binning \
-    sampler.deg_cone_projection=50. \
-    sampler.lp_custom=2 \
-    diffusion_model.cfg_path="configs/stable-diffusion/v1-inference.yaml" \
-    diffusion_model.ckpt_path="/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" \
-    output_dir=/misc/lmbraid21/faridk/LDCE_cc_ws_l2_sd_correct > logs/cc_ws_l2_sd_correct.log 
+    sampler.deg_cone_projection=50. > logs/LDCE_sd_correct_${classifiers_list[$PBS_ARRAYID]}_seed_${seed}.log
 
 exit 0
 

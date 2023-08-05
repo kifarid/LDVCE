@@ -12,14 +12,14 @@ from eval_utils.compute_COUT import compute_cout
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--path", type=str, default="/misc/lmbraid21/faridk/celeb_smile_corrected_6/")
+    parser.add_argument("--path", type=str, default="/misc/lmbraid21/faridk/celeb_age_corrected_8/")
     args = parser.parse_args()
     path = args.path
     #load config.yaml file from data subdirectories
     
 
     config = yaml.load(open(glob.glob(args.path + '/**/config.yaml', recursive=True)[0], "r"), Loader=yaml.FullLoader)
-    query_label = 31 #config["data"]["query_label"]
+    query_label = 39 #config["data"]["query_label"]
     
     for query_label in [query_label]:
         # FID

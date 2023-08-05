@@ -1,12 +1,12 @@
 #!/bin/bash
-#PBS -N LDCE_flowers
+#PBS -N LDVCE_SD_free
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 6
+#PBS -t 7
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -19,14 +19,10 @@ hostname
 echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 
-python -m scripts.dvce --config-name=v8_flowers\
-    data.batch_size=4 \
-    strength=0.5 \
-    sampler.classifier_lambda=3. \
-    sampler.dist_lambda=1.2 \
-    output_dir=/misc/lmbraid21/faridk/ldvce_flowers_correct_targets \
-    data.num_shards=7 \
-    data.shard=${PBS_ARRAYID} \
-     > logs/ldvce_flowers_${PBS_ARRAYID}.log 
+python -m scripts.dvce --config-name=v8_stable_diffusion_default \
+    data.batch_size=2 \
+    output_dir=/misc/lmbraid21/faridk/LDCE_sd_free \
+    sampler.guidance=free \
+    data.start_sample=$PBS_ARRAYID data.end_sample=$((PBS_ARRAYID+1)) > logs/LDCE_sd_free_${PBS_ARRAYID}.log 
 
 exit 0

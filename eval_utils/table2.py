@@ -9,7 +9,7 @@ from eval_utils.compute_fid import compute_fid
 #path = "/misc/lmbraid21/faridk/testing/LDCE_sd"
 # path = "/misc/lmbraid21/faridk/ImageNetDVCEs_" # DVCE
 # path = "/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly" # SVCE-robust
-path = "/misc/lmbraid21/faridk/LDCE_sd_correct_3925_50/"  # SVCE-non robust
+path = "/misc/lmbraid21/faridk/LDCE_sd_default/"  # SVCE-non robust
 
 # L1 & L2
 args = {

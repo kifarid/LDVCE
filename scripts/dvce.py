@@ -81,10 +81,28 @@ def get_classifier(cfg, device):
             classifier_model = MadryNet(cfg.classifier_model.ckpt, device)
             if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
                 classifier_model = Crop(classifier_model)
+        
+        elif classifier_name == "clip":
+            # zero-shot OpenClip: https://arxiv.org/pdf/2212.07143.pdf
+            model, _, preprocess = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
+            model = model.to(device).eval()
+            tokenizer = open_clip.get_tokenizer('ViT-B-32')
+            # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
+            idx_to_classname = {k: v.split(",")[0] for k, v in name_map.items()}
+            prompts = [f"a photo of a {label}, a type of pet." for label in idx_to_classname.values()]
+            classifier_model = VisionLanguageWrapper(model, tokenizer, prompts)
+            # try running optimization on 224x224 pixel image
+            # transforms_list = [preprocess.transforms[0], preprocess.transforms[1], preprocess.transforms[4]]
+            if cfg.classifier_model.classifier_wrapper:
+                transforms_list = [preprocess.transforms[1], preprocess.transforms[4]] # CenterCrop(224, 224), Normalize
+                classifier_model = GenericPreprocessing(classifier_model, transforms.Compose(transforms_list))
+        
         else:
             classifier_model = getattr(torchvision.models, classifier_name)(pretrained=True)
             if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
                 classifier_model = CropAndNormalizer(classifier_model)
+    
+
     elif "CelebAHQDataset" in cfg.data._target_:
         assert cfg.data.query_label in [20, 31, 39], 'Query label MUST be 20 (Gender), 31 (Smile), or 39 (Age) for CelebAHQ'
         ql = 0
@@ -208,7 +226,7 @@ def get_dataset(cfg, last_data_idx: int = 0):
         raise NotImplementedError
     return dataset
 
-@hydra.main(version_base=None, config_path="../configs/dvce", config_name="v8_celebAHQ_corrected")
+@hydra.main(version_base=None, config_path="../configs/dvce", config_name="multiple_classifiers_clip")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
         with open_dict(cfg):

@@ -12,10 +12,10 @@ from utils.fig_utils import get_concat_h, get_concat_v
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_smile_new"
 #base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
 
-classifiers = ["inception_v3", "vit_b_32", "efficientnet_b7", "convnext_base"]
-base_path = "/misc/lmbraid21/faridk/LDCE_sd_"
+classifiers = ["inception_v3", "vit_b_32", "efficientnet_b7", "clip"] #, ""]
+base_path = "/misc/lmbraid21/faridk/LDCE_sd_correct_"
 
-save_base_path = "/misc/lmbraid21/faridk/multi_classifiers_cat"
+save_base_path = "/misc/lmbraid21/faridk/multi_classifiers_correct_cat"
 os.makedirs(save_base_path, exist_ok=True)
 os.chmod(save_base_path, 0o777)
 save_path = os.path.join(save_base_path, "examples")
@@ -50,7 +50,7 @@ for pth_file in tqdm(sorted(glob.glob(bucket_folder + "/*.pth")), leave=False):
 
             #filename = str(counter).zfill(5)
             image_across_seeds.append(counterfactual_img)
-        image_across_seeds.append(original_img)
+        image_across_seeds = [original_img] + image_across_seeds
         image_across_seeds =get_concat_h(*image_across_seeds)
     
         images_across_classifiers.append(image_across_seeds)

@@ -1,12 +1,12 @@
 #!/bin/bash
-#PBS -N ldvces_cc_l2_sd
+#PBS -N LDVCE_diversity
 #PBS -S /bin/bash
 #PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00
 #PBS -o logs/
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
 #PBS -q default-cpu
-#PBS -t 0
+#PBS -t 4
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -16,21 +16,18 @@ WORKDIR="/misc/student/faridk/stable-diffusion"
 cd $WORKDIR
 echo "QSUB working on: ${WORKDIR}"
 hostname
-echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
+seed=$PBS_ARRAYID
 
-python -m scripts.dvce --config-name=v8_cc \
+python -m scripts.dvce --config-name=diversity \
     data.batch_size=4 \
-    strength=0.382 \
+    output_dir=/misc/lmbraid21/faridk/LDCE_sd_correct_seed_${seed} \
+    seed=$seed \
     sampler.guidance=projected \
     sampler.classifier_lambda=3.95 \
     sampler.dist_lambda=1.2 \
     sampler.cone_projection_type=zero_binning \
-    sampler.deg_cone_projection=50. \
-    sampler.lp_custom=2 \
-    diffusion_model.cfg_path="configs/stable-diffusion/v1-inference.yaml" \
-    diffusion_model.ckpt_path="/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" \
-    output_dir=/misc/lmbraid21/faridk/LDCE_cc_ws_l2_sd_correct > logs/cc_ws_l2_sd_correct.log 
+    sampler.deg_cone_projection=50. > logs/LDCE_sd_correct_seed_${seed}.log
 
 exit 0
 

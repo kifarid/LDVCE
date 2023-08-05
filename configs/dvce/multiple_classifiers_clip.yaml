@@ -9,7 +9,8 @@ diffusion_model:
 
 seg_model:
 classifier_model:
-  name: "resnet50"
+  name: "clip"
+  classifier_wrapper: True
 
 
 n_samples_per_class: #2

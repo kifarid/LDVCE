@@ -1,7 +1,7 @@
 resume: False
 checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
 record_intermediate: False
-output_dir: /misc/lmbraid21/faridk/debug_multiple_classifiers
+output_dir: /misc/lmbraid21/faridk/multiple_seeds_${seed}
 
 diffusion_model:
   cfg_path: "configs/stable-diffusion/v1-inference.yaml"
@@ -37,7 +37,15 @@ data:
     - 414
     - 425
     - 497
+    - 500
     - 574
+    - 660
+    - 666
+    - 690
+    - 701
+    - 714
+    - 750
+    - 790
     - 829
     - 924
     - 949
@@ -97,7 +105,7 @@ data:
 
   split: 'val'
   return_tgt_cls: True
-  batch_size: 1
+  batch_size: 4
   start_sample: 0
   end_sample: 50
 

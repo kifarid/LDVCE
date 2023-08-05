@@ -18,13 +18,23 @@ echo "QSUB working on: ${WORKDIR}"
 hostname
 echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
+
 python -m scripts.dvce --config-name=v8_pets\
     data.batch_size=4 \
-    sampler.classifier_lambda=4 \
-    sampler.dist_lambda=1.75 \
-    output_dir=/misc/lmbraid21/faridk/ldvce_pets_4_175 \
+    sampler.classifier_lambda=4.2 \
+    sampler.dist_lambda=2.4 \
+    output_dir=/misc/lmbraid21/faridk/ldvce_pets_42_24_correct \
     data.num_shards=7 \
     data.shard=${PBS_ARRAYID} \
-     > logs/testing/ldvce_pets_4_175_${PBS_ARRAYID}.log 
+     > logs/testing/ldvce_pets_42_24_${PBS_ARRAYID}.log 
+
+# python -m scripts.dvce --config-name=v8_pets\
+#     data.batch_size=4 \
+#     sampler.classifier_lambda=4 \
+#     sampler.dist_lambda=1.75 \
+#     output_dir=/misc/lmbraid21/faridk/ldvce_pets_4_175 \
+#     data.num_shards=7 \
+#     data.shard=${PBS_ARRAYID} \
+#      > logs/testing/ldvce_pets_4_175_${PBS_ARRAYID}.log 
 
 exit 0
