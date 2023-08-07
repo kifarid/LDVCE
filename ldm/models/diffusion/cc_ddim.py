@@ -192,7 +192,7 @@ class CCDDIMSampler(object):
 
         # print("check gradient tracking onf e ", e_t.requires_grad)
         if self.guidance == "free":
-            e_t_uncond, e_t, pred_x0 = self.get_output(x, t, c, index, unconditional_conditioning, use_original_steps,
+            e_t_uncond, e_t, pred_x0, _ = self.get_output(x, t, c, index, unconditional_conditioning, use_original_steps,
                                                        quantize_denoised, return_decoded=True)
 
             if self.masked_guidance:
@@ -212,7 +212,7 @@ class CCDDIMSampler(object):
 
             if self.classifier_lambda != 0:
                 x_grad = x.detach().requires_grad_()
-                e_t_uncond, e_t, pred_x0 = self.get_output(x_grad, t, c, index, unconditional_conditioning,
+                e_t_uncond, e_t, pred_x0, _ = self.get_output(x_grad, t, c, index, unconditional_conditioning,
                                                            use_original_steps, quantize_denoised=quantize_denoised,
                                                            return_decoded=True)
                 classifier_dist = self.get_classifier_dist(pred_x0)
@@ -227,7 +227,7 @@ class CCDDIMSampler(object):
             if self.lp_custom:
                 assert x.requires_grad == False, "x requires grad"
                 x_grad = x.detach().requires_grad_()
-                e_t_uncond, e_t, pred_x0 = self.get_output(x_grad, t, c, index, unconditional_conditioning,
+                e_t_uncond, e_t, pred_x0, _ = self.get_output(x_grad, t, c, index, unconditional_conditioning,
                                                            use_original_steps, quantize_denoised=quantize_denoised,
                                                            return_decoded=True)
                 # print("computing the lp gradient")
@@ -580,6 +580,8 @@ class CCMDDIMSampler(object):
         self.init_labels = None            
         self.mask = None
         self.concensus_regions = []
+
+        self.pred_x0_latents = []
         
         self.detect_model = detect_model
         self.classification_criterion = torch.nn.CrossEntropyLoss()
@@ -691,7 +693,7 @@ class CCMDDIMSampler(object):
         return self.mask
 
     def get_output(self, x, t, c, index, unconditional_conditioning, use_original_steps=True, quantize_denoised=True,
-                   return_decoded=False, return_pred_latent_x0=False):
+                   return_decoded=False):
         b, device = x.shape[0], x.device
         x_in = torch.cat([x] * 2)
         t_in = torch.cat([t] * 2)
@@ -715,10 +717,7 @@ class CCMDDIMSampler(object):
                 pred_latent_x0)  # if self.model_type == "latent" else pred_latent_x0
             # pred_x0 = torch.clamp((pred_x0 + 1.0) / 2.0, min=0.0, max=1.0)
             
-            if return_pred_latent_x0:
-                return e_t_uncond, e_t, pred_x0, pred_latent_x0
-            else:
-                return e_t_uncond, e_t, pred_x0
+            return e_t_uncond, e_t, pred_x0, pred_latent_x0
         else:
             return e_t_uncond, e_t
 
@@ -755,7 +754,7 @@ class CCMDDIMSampler(object):
 
         # print("check gradient tracking onf e ", e_t.requires_grad)
         if self.guidance == "free":
-            e_t_uncond, e_t, pred_x0 = self.get_output(x, t, c, index, unconditional_conditioning, use_original_steps,
+            e_t_uncond, e_t, pred_x0, _ = self.get_output(x, t, c, index, unconditional_conditioning, use_original_steps,
                                                        quantize_denoised, return_decoded=True)
 
             e_t = e_t_uncond + unconditional_guidance_scale * (e_t - e_t_uncond)
@@ -769,11 +768,8 @@ class CCMDDIMSampler(object):
             x_noise = x.detach().requires_grad_()
             ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
                                                         use_original_steps, quantize_denoised=quantize_denoised,
-                                                        return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
-            if self.log_backprop_gradients:
-                e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
-            else:
-                e_t_uncond, e_t, pred_x0 = ret_vals
+                                                        return_decoded=True)
+            e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
 
         with torch.no_grad():
             if isinstance(self.lp_custom, str) and "dino_" in self.lp_custom: # retain_graph causes cuda oom issues for dino distance regularizer...
@@ -794,10 +790,7 @@ class CCMDDIMSampler(object):
                         ret_vals = self.get_output(x_noise, t, c, index, unconditional_conditioning,
                                                                     use_original_steps, quantize_denoised=quantize_denoised,
                                                                     return_decoded=True, return_pred_latent_x0=self.log_backprop_gradients)
-                        if self.log_backprop_gradients:
-                            e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
-                        else:
-                            e_t_uncond, e_t, pred_x0 = ret_vals
+                        e_t_uncond, e_t, pred_x0, pred_latent_x0 = ret_vals
                     pred_logits = self.get_classifier_logits(pred_x0)
                     if len(pred_logits.shape) == 2: # multi-class
                         log_probs = torch.nn.functional.log_softmax(pred_logits, dim=-1)
@@ -901,6 +894,7 @@ class CCMDDIMSampler(object):
             self.images.append(img.detach().cpu())
             if self.classifier_lambda != 0 and self.cone_projection_type == "binning":
                 self.concensus_regions.append(concensus_region.detach().cpu())
+            # self.pred_x0_latents.append(pred_latent_x0.detach().cpu())
             
             if prob_best_class is not None:
                 self.probs.append(prob_best_class.detach().cpu())

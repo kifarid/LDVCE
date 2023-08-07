@@ -226,6 +226,43 @@ def get_dataset(cfg, last_data_idx: int = 0):
         raise NotImplementedError
     return dataset
 
+def create_prompts(cfg, tgt_classes, i2h, is_text: bool) -> list:
+    if is_text: # text-conditional
+        if "ImageNet" in cfg.data._target_:
+            prompts = [f"a photo of a {openai_imagenet_classes[idx.item()]}." for idx in tgt_classes]
+        elif "CelebAHQDataset" in cfg.data._target_:
+            # query label 31 (smile): label=0 <-> no smile and label=1 <-> smile
+            # query label 39 (age): label=0 <-> old and label=1 <-> young
+            assert cfg.data.query_label in [31, 39]
+            prompts = []
+            for target in tgt_classes:
+                if cfg.data.query_label == 31 and target == 0:
+                    attr = "non-smiling"
+                elif cfg.data.query_label == 31 and target == 1:
+                    attr = "smiling"
+                elif cfg.data.query_label == 39 and target == 0:
+                    attr = "old"
+                elif cfg.data.query_label == 39 and target == 1:
+                    attr = "young"
+                else:
+                    raise NotImplementedError
+                prompts.append(f"a photo of a {attr} person")
+        elif "CUB" in cfg.data._target_:
+            # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
+            prompts = [f"a photo of a {i2h[target.item()]}, a type of bird." for target in tgt_classes]
+        elif "OxfordIIIPets" in cfg.data._target_:
+            # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
+            prompts = [f"a photo of a {i2h[idx.item()]}, a type of pet." for idx in tgt_classes]
+        elif "Flowers102" in cfg.data._target_:
+            # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
+            prompts = [f"a photo of a {i2h[idx.item()]}, a type of flower." for idx in tgt_classes]
+        else:
+            raise NotImplementedError
+    else:
+        prompts = None
+    
+    return prompts
+
 @hydra.main(version_base=None, config_path="../configs/dvce", config_name="multiple_classifiers_clip")
 def main(cfg : DictConfig) -> None:
     if "verbose" not in cfg:
@@ -234,6 +271,9 @@ def main(cfg : DictConfig) -> None:
     if "record_intermediate_results" not in cfg:
         with open_dict(cfg):
             cfg.record_intermediate_results = True
+    if "mode" not in cfg:
+        with open_dict(cfg):
+            cfg.mode = "generate"
 
     if "verbose" in cfg and not cfg.verbose:
         blockPrint()
@@ -427,10 +467,7 @@ def main(cfg : DictConfig) -> None:
                 in_class_pred = (logits >= 0).type(torch.int8)
                 in_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
                 in_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
-            print("in class_pred: ", in_class_pred, in_confid)
-        
-        for j, l in enumerate(label):
-            print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(tgt_classes[j].item())]}")
+            print("in class_pred: ", in_class_pred.item(), in_confid.item())
         
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
@@ -443,154 +480,278 @@ def main(cfg : DictConfig) -> None:
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
         
-        if "txt" == model.cond_stage_key: # text-conditional
-            if "ImageNet" in cfg.data._target_:
-                prompts = [f"a photo of a {openai_imagenet_classes[idx.item()]}." for idx in tgt_classes]
-            elif "CelebAHQDataset" in cfg.data._target_:
-                # query label 31 (smile): label=0 <-> no smile and label=1 <-> smile
-                # query label 39 (age): label=0 <-> old and label=1 <-> young
-                assert cfg.data.query_label in [31, 39]
-                prompts = []
-                for target in tgt_classes:
-                    if cfg.data.query_label == 31 and target == 0:
-                        attr = "non-smiling"
-                    elif cfg.data.query_label == 31 and target == 1:
-                        attr = "smiling"
-                    elif cfg.data.query_label == 39 and target == 0:
-                        attr = "old"
-                    elif cfg.data.query_label == 39 and target == 1:
-                        attr = "young"
+        if cfg.mode == "generate":
+            for j, l in enumerate(label):
+                print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(tgt_classes[j].item())]}")
+            prompts = create_prompts(
+                cfg=cfg,
+                tgt_classes=tgt_classes,
+                i2h=i2h,
+                is_text="txt" == model.cond_stage_key,
+            )
+            out = generate_samples(
+                model, 
+                sampler, 
+                tgt_classes, 
+                ddim_steps, 
+                scale, 
+                init_latent=init_latent.to(device),
+                t_enc=t_enc, 
+                init_image=init_image.to(device), 
+                ccdddim=True, 
+                latent_t_0=cfg.get("latent_t_0", False),
+                prompts=prompts, 
+                seed=seed,
+            )
+
+            all_samples = out["samples"]
+            all_videos = out["videos"] 
+            all_probs = out["probs"]
+            all_masks = out["masks"] 
+            all_cgs = out["cgs"]
+
+            with torch.inference_mode():
+                if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
+                    logits = classifier_model(all_samples[0])
+                else:
+                    logits = sampler.get_classifier_logits(_unmap_img(all_samples[0])) #converting to -1, 1 (it is converted back in the function)
+                if "ImageNet" in cfg.data._target_ or "CUB" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_ or "Flowers102" in cfg.data._target_: # multi-class
+                    out_class_pred = logits.argmax(dim=1)
+                    out_confid = logits.softmax(dim=1).max(dim=1).values
+                    out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+                else: # binary
+                    out_class_pred = (logits >= 0).type(torch.int8)
+                    out_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
+                    out_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
+                print("out class_pred: ", out_class_pred.item(), out_confid.item())
+                print(out_confid_tgt)
+
+            # Loop through your data and update the table incrementally
+            for j in range(batch_size):
+                # Generate data for the current row
+                src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
+                gen_image = copy.deepcopy(all_samples[0][j].cpu())
+                class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
+                
+                source = i2h[label[j].item()]
+                target = i2h[int(tgt_classes[j].item())]
+                in_pred_cls = i2h[in_class_pred[j].item()]
+                out_pred_cls = i2h[out_class_pred[j].item()]
+
+                #diff =  (init_image - all_samples[j][1:])
+                diff = sampler.init_images[j]-all_samples[0][j]   
+                lp1 = int(torch.norm(diff, p=1, dim=-1).mean().cpu().numpy())
+                lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
+                #print(f"lp1: {lp1}, lp2: {lp2}")
+
+                data_dict = {
+                    "unique_id": unique_data_idx[j].item(), 
+                    "image": src_image, 
+                    "source": source, 
+                    "target": target, 
+                    "gen_image": gen_image,
+                    "target_confidence": class_prediction, 
+                    "in_pred": in_pred_cls, 
+                    "out_pred": out_pred_cls, 
+                    "out_confid": out_confid[j].cpu().item(), 
+                    "out_tgt_confid": out_confid_tgt[j].cpu().item(), 
+                    "in_confid": in_confid[j].cpu().item(), 
+                    "in_tgt_confid": in_confid_tgt[j].cpu().item(), 
+                    "closness_1": lp1, 
+                    "closness_2": lp2,
+                }
+                if cfg.record_intermediate_results:
+                    if all_videos is not None:
+                        video_results = {
+                            "video": (255. * all_videos[0][j]).to(torch.uint8).cpu(), 
+                        }
+                        data_dict = dict(data_dict, **video_results)
+                    if all_cgs is not None:
+                        cgs_results = {
+                            "cgs": (255.*all_cgs[0][j]).to(torch.float32).cpu(),
+                        }
+                        data_dict = dict(data_dict, **cgs_results)
+                
+                if "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_:
+                    uidx = unique_data_idx[j].item()*cfg.data.num_shards + cfg.data.shard
+                else:
+                    uidx = unique_data_idx[j].item()
+                
+                dict_save_path = os.path.join(out_dir, f'{str(uidx).zfill(5)}.pth')
+                torch.save(data_dict, dict_save_path)
+                os.chmod(dict_save_path, 0o555)
+
+                pathlib.Path(os.path.join(out_dir, 'original')).mkdir(parents=True, exist_ok=True, mode=0o777)
+                os.chmod(os.path.join(out_dir, 'original'), 0o777)
+                pathlib.Path(os.path.join(out_dir, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
+                os.chmod(os.path.join(out_dir, 'counterfactual'), 0o777)
+                orig_save_path = os.path.join(out_dir, 'original', f'{str(uidx).zfill(5)}.png')
+                save_image(src_image.clip(0, 1), orig_save_path)
+                os.chmod(orig_save_path, 0o555)
+
+                cf_save_path = os.path.join(out_dir, 'counterfactual', f'{str(uidx).zfill(5)}.png')
+                save_image(gen_image.clip(0, 1), cf_save_path)
+                os.chmod(cf_save_path, 0o555)
+
+            if (i + 1) % cfg.log_rate == 0:
+                last_data_idx = unique_data_idx[-1].item()
+                torch.save({
+                    #"table": copy.deepcopy(my_table),
+                    "last_data_idx": last_data_idx,
+                }, checkpoint_path)
+                os.chmod(checkpoint_path, 0o777)
+                print(f"saved {checkpoint_path}, with data_id {last_data_idx}")
+
+            del out
+        elif cfg.mode == "composition":
+            m = 10
+            l1_errors = {}
+            orig_images = torch.clone(sampler.init_images)
+            orig_latent = torch.clone(init_latent)
+            prompts = create_prompts(
+                cfg=cfg,
+                tgt_classes=label,
+                i2h=i2h,
+                is_text="txt" == model.cond_stage_key,
+            )
+            for j, l in enumerate(label):
+                print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(label[j].item())]}")
+            for _ in range(m):
+                out = generate_samples(
+                    model, 
+                    sampler, 
+                    label, 
+                    ddim_steps, 
+                    scale, 
+                    init_latent=init_latent.to(device),
+                    t_enc=t_enc, 
+                    init_image=init_image.to(device), 
+                    ccdddim=True, 
+                    latent_t_0=cfg.get("latent_t_0", False),
+                    prompts=prompts, 
+                    seed=seed,
+                    return_counterfactual_latents=True,
+                )
+                pixel_space_counterfactuals = out["samples"][0]
+                latent_spate_counterfactuals = out["latents"][0]
+                for j in range(orig_images.shape[0]):
+                    # pixel-space lp norm
+                    pixel_diff = orig_images[j]-pixel_space_counterfactuals[j]   
+                    pixel_lp1 = int(torch.norm(pixel_diff, p=1, dim=-1).mean().cpu().numpy())
+                    # latent-space lp norm
+                    latent_diff = orig_latent[j]-latent_spate_counterfactuals[j]   
+                    latent_lp1 = int(torch.norm(latent_diff, p=1, dim=-1).mean().cpu().numpy())
+                    res_dict = {
+                        "pixel": pixel_lp1,
+                        "latent": latent_lp1,
+                    }
+                    if j in l1_errors:
+                        l1_errors[j].append(res_dict)
                     else:
-                        raise NotImplementedError
-                    prompts.append(f"a photo of a {attr} person")
-            elif "CUB" in cfg.data._target_:
-                # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
-                prompts = [f"a photo of a {i2h[target.item()]}, a type of bird." for target in tgt_classes]
-            elif "OxfordIIIPets" in cfg.data._target_:
-                # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
-                prompts = [f"a photo of a {i2h[idx.item()]}, a type of pet." for idx in tgt_classes]
-            elif "Flowers102" in cfg.data._target_:
-                # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
-                prompts = [f"a photo of a {i2h[idx.item()]}, a type of flower." for idx in tgt_classes]
-            else:
-                raise NotImplementedError
+                        l1_errors[j] = [res_dict]
+
+                # set up next round
+                init_image = torch.clone(pixel_space_counterfactuals)
+                sampler.init_images = init_image.to(device)
+                sampler.init_labels = label # n_samples_per_class * [label]
+                init_latent = model.get_first_stage_encoding(
+                    model.encode_first_stage(_unmap_img(init_image))
+                )  # move to latent space
+                del out
+
+            for j in range(orig_images.shape[0]):
+                lp_save_path = os.path.join(out_dir, f'{str(j).zfill(5)}.json')
+                with open(lp_save_path, "w") as f:
+                    json.dump(l1_errors[j], f, indent=2)
+                os.chmod(lp_save_path, 0o555)
+        elif cfg.mode == "reversibility":
+            m = 10
+            orig_images = torch.clone(sampler.init_images)
+            orig_latent = torch.clone(init_latent)
+            l1_errors = {}
+            for _ in range(m):
+                for j, l in enumerate(label):
+                    print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(tgt_classes[j].item())]}")
+                prompts = create_prompts(
+                    cfg=cfg,
+                    tgt_classes=tgt_classes,
+                    i2h=i2h,
+                    is_text="txt" == model.cond_stage_key,
+                )
+                out = generate_samples(
+                    model, 
+                    sampler, 
+                    tgt_classes, 
+                    ddim_steps, 
+                    scale, 
+                    init_latent=init_latent.to(device),
+                    t_enc=t_enc, 
+                    init_image=init_image.to(device), 
+                    ccdddim=True, 
+                    latent_t_0=cfg.get("latent_t_0", False),
+                    prompts=prompts, 
+                    seed=seed,
+                )
+
+                # set up other direction
+                init_image = torch.clone(out["samples"][0])
+                sampler.init_images = init_image.to(device)
+                sampler.init_labels = label # n_samples_per_class * [label]
+                init_latent = model.get_first_stage_encoding(
+                    model.encode_first_stage(_unmap_img(init_image))
+                )  # move to latent space
+                del out
+
+                # back to original class
+                for j, l in enumerate(label):
+                    print(f"back converting {i} from : {i2h[tgt_classes[j].item()]} to: {i2h[int(l.item())]}")
+                prompts = create_prompts(
+                    cfg=cfg,
+                    tgt_classes=label,
+                    i2h=i2h,
+                    is_text="txt" == model.cond_stage_key,
+                )
+                out = generate_samples(
+                    model, 
+                    sampler, 
+                    label, 
+                    ddim_steps, 
+                    scale, 
+                    init_latent=init_latent.to(device),
+                    t_enc=t_enc, 
+                    init_image=init_image.to(device), 
+                    ccdddim=True, 
+                    latent_t_0=cfg.get("latent_t_0", False),
+                    prompts=prompts, 
+                    seed=seed,
+                    return_counterfactual_latents=True,
+                )
+                pixel_space_counterfactuals = out["samples"][0]
+                latent_spate_counterfactuals = out["latents"][0]
+                for j in range(orig_images.shape[0]):
+                    # pixel-space lp norm
+                    pixel_diff = orig_images[j]-pixel_space_counterfactuals[j]   
+                    pixel_lp1 = int(torch.norm(pixel_diff, p=1, dim=-1).mean().cpu().numpy())
+                    # latent-space lp norm
+                    latent_diff = orig_latent[j]-latent_spate_counterfactuals[j]   
+                    latent_lp1 = int(torch.norm(latent_diff, p=1, dim=-1).mean().cpu().numpy())
+                    res_dict = {
+                        "pixel": pixel_lp1,
+                        "latent": latent_lp1,
+                    }
+                    if j in l1_errors:
+                        l1_errors[j].append(res_dict)
+                    else:
+                        l1_errors[j] = [res_dict]
+                del out
+
+            for j in range(orig_images.shape[0]):
+                lp_save_path = os.path.join(out_dir, f'{str(j).zfill(5)}.json')
+                with open(lp_save_path, "w") as f:
+                    json.dump(l1_errors[j], f, indent=2)
+                os.chmod(lp_save_path, 0o555)
         else:
-            prompts = None
-        
-        out = generate_samples(
-            model, 
-            sampler, 
-            tgt_classes, 
-            ddim_steps, 
-            scale, 
-            init_latent=init_latent.to(device),
-            t_enc=t_enc, 
-            init_image=init_image.to(device), 
-            ccdddim=True, 
-            latent_t_0=cfg.get("latent_t_0", False),
-            prompts=prompts, 
-            seed=seed,
-        )
-
-        all_samples = out["samples"]
-        all_videos = out["videos"] 
-        all_probs = out["probs"]
-        all_masks = out["masks"] 
-        all_cgs = out["cgs"]
-
-        with torch.inference_mode():
-            if "classifier_wrapper" in cfg.classifier_model and cfg.classifier_model.classifier_wrapper:
-                logits = classifier_model(all_samples[0])
-            else:
-                logits = sampler.get_classifier_logits(_unmap_img(all_samples[0])) #converting to -1, 1 (it is converted back in the function)
-            if "ImageNet" in cfg.data._target_ or "CUB" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_ or "Flowers102" in cfg.data._target_: # multi-class
-                out_class_pred = logits.argmax(dim=1)
-                out_confid = logits.softmax(dim=1).max(dim=1).values
-                out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
-            else: # binary
-                out_class_pred = (logits >= 0).type(torch.int8)
-                out_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
-                out_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
-            print("out class_pred: ", out_class_pred, out_confid)
-            print(out_confid_tgt)
-
-        # Loop through your data and update the table incrementally
-        for j in range(batch_size):
-            # Generate data for the current row
-            src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
-            gen_image = copy.deepcopy(all_samples[0][j].cpu())
-            class_prediction = copy.deepcopy(all_probs[0][j]) if all_probs is not None else out_confid[j] # all_probs[j]
-            
-            source = i2h[label[j].item()]
-            target = i2h[int(tgt_classes[j].item())]
-            in_pred_cls = i2h[in_class_pred[j].item()]
-            out_pred_cls = i2h[out_class_pred[j].item()]
-
-            #diff =  (init_image - all_samples[j][1:])
-            diff = sampler.init_images[j]-all_samples[0][j]   
-            lp1 = int(torch.norm(diff, p=1, dim=-1).mean().cpu().numpy())
-            lp2 = int(torch.norm(diff, p=2, dim=-1).mean().cpu().numpy())
-            #print(f"lp1: {lp1}, lp2: {lp2}")
-
-            data_dict = {
-                "unique_id": unique_data_idx[j].item(), 
-                "image": src_image, 
-                "source": source, 
-                "target": target, 
-                "gen_image": gen_image,
-                "target_confidence": class_prediction, 
-                "in_pred": in_pred_cls, 
-                "out_pred": out_pred_cls, 
-                "out_confid": out_confid[j].cpu().item(), 
-                "out_tgt_confid": out_confid_tgt[j].cpu().item(), 
-                "in_confid": in_confid[j].cpu().item(), 
-                "in_tgt_confid": in_confid_tgt[j].cpu().item(), 
-                "closness_1": lp1, 
-                "closness_2": lp2,
-            }
-            if cfg.record_intermediate_results:
-                if all_videos is not None:
-                    video_results = {
-                        "video": (255. * all_videos[0][j]).to(torch.uint8).cpu(), 
-                    }
-                    data_dict = dict(data_dict, **video_results)
-                if all_cgs is not None:
-                    cgs_results = {
-                        "cgs": (255.*all_cgs[0][j]).to(torch.float32).cpu(),
-                    }
-                    data_dict = dict(data_dict, **cgs_results)
-            
-            if "CUB" in cfg.data._target_ or "Flowers102" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_:
-                uidx = unique_data_idx[j].item()*cfg.data.num_shards + cfg.data.shard
-            else:
-                uidx = unique_data_idx[j].item()
-            
-            dict_save_path = os.path.join(out_dir, f'{str(uidx).zfill(5)}.pth')
-            torch.save(data_dict, dict_save_path)
-            os.chmod(dict_save_path, 0o555)
-
-            pathlib.Path(os.path.join(out_dir, 'original')).mkdir(parents=True, exist_ok=True, mode=0o777)
-            os.chmod(os.path.join(out_dir, 'original'), 0o777)
-            pathlib.Path(os.path.join(out_dir, 'counterfactual')).mkdir(parents=True, exist_ok=True, mode=0o777)
-            os.chmod(os.path.join(out_dir, 'counterfactual'), 0o777)
-            orig_save_path = os.path.join(out_dir, 'original', f'{str(uidx).zfill(5)}.png')
-            save_image(src_image.clip(0, 1), orig_save_path)
-            os.chmod(orig_save_path, 0o555)
-
-            cf_save_path = os.path.join(out_dir, 'counterfactual', f'{str(uidx).zfill(5)}.png')
-            save_image(gen_image.clip(0, 1), cf_save_path)
-            os.chmod(cf_save_path, 0o555)
-
-        if (i + 1) % cfg.log_rate == 0:
-            last_data_idx = unique_data_idx[-1].item()
-            torch.save({
-                #"table": copy.deepcopy(my_table),
-                "last_data_idx": last_data_idx,
-            }, checkpoint_path)
-            os.chmod(checkpoint_path, 0o777)
-            print(f"saved {checkpoint_path}, with data_id {last_data_idx}")
-
-        del out
+            raise NotImplementedError
             
     return None
 
