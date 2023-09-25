@@ -25,7 +25,7 @@ class ImageNet(datasets.ImageFolder):
             transform=None, 
             target_transform=None, 
             class_idcs=None, 
-            start_sample: float = 0., 
+            start_sample: int = 0, 
             end_sample: int = 50000//1000,
             return_tgt_cls: bool = False,
             idx_to_tgt_cls_path = None,
@@ -41,14 +41,17 @@ class ImageNet(datasets.ImageFolder):
         assert 0 <= restart_idx < 50000
         self.restart_idx = restart_idx
 
+        self.split = split
+
         path = root if root[-3:] == "val" or root[-5:] == "train" else os.path.join(root, split)
         super().__init__(path, transform=transform, target_transform=target_transform)
         
-        with open(idx_to_tgt_cls_path, 'r') as file:
-            idx_to_tgt_cls = yaml.safe_load(file)
-            if isinstance(idx_to_tgt_cls, dict):
-                idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
-        self.idx_to_tgt_cls = idx_to_tgt_cls
+        if split == "val":
+            with open(idx_to_tgt_cls_path, 'r') as file:
+                idx_to_tgt_cls = yaml.safe_load(file)
+                if isinstance(idx_to_tgt_cls, dict):
+                    idx_to_tgt_cls = [idx_to_tgt_cls[i] for i in range(len(idx_to_tgt_cls))]
+            self.idx_to_tgt_cls = idx_to_tgt_cls
 
         self.return_tgt_cls = return_tgt_cls
 
@@ -63,6 +66,7 @@ class ImageNet(datasets.ImageFolder):
                     samples.append((p, tgt_to_tgt_map[t]))
                     idx_to_tgt_cls.append(self.idx_to_tgt_cls[i])
             
+            self.samples = samples
             self.idx_to_tgt_cls = idx_to_tgt_cls
             #self.samples = [(p, tgt_to_tgt_map[t]) for i, (p, t) in enumerate(self.samples) if t in tgt_to_tgt_map]
             self.class_to_idx = {k: tgt_to_tgt_map[v] for k, v in self.class_to_idx.items() if v in tgt_to_tgt_map}
@@ -75,9 +79,8 @@ class ImageNet(datasets.ImageFolder):
                 idx_to_tgt_cls.extend(self.idx_to_tgt_cls[idx::50000//1000])
             self.samples = new_samples[int(start_sample*1000):end_sample*1000]
             self.idx_to_tgt_cls = idx_to_tgt_cls[int(start_sample*1000):end_sample*1000]
-
         else:
-            raise NotImplementedError
+            pass
         
         if self.restart_idx > 0:
             self.samples = self.samples[self.restart_idx:]
@@ -88,10 +91,12 @@ class ImageNet(datasets.ImageFolder):
     
     def __getitem__(self, index):
         sample = super().__getitem__(index)
+        if self.split == "train":
+            return sample
         if self.return_tgt_cls:
             return *sample, self.idx_to_tgt_cls[index], index + self.start_sample*1000 + self.restart_idx
         else:
-            return sample, index + self.start_sample*1000 + self.restart_idx
+            return *sample, index + self.start_sample*1000 + self.restart_idx
         
 
 class ImageNetSelect(datasets.ImageFolder):

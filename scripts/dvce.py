@@ -371,6 +371,11 @@ def main(cfg : DictConfig) -> None:
             os.chmod(os.path.join(out_dir, "config.yaml"), 0o555)
     
     #data_path = cfg.data_path
+    if cfg.mode == "generate_misclassifications":
+        with open(cfg.data.img_indices_path, "r") as f:
+            data = f.readlines()
+        cfg.data.image_idcs = [int(d[:-1]) for d in data]
+
     dataset = get_dataset(cfg, last_data_idx=last_data_idx)
     print("dataset length: ", len(dataset))
     data_loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=shuffle, num_workers=1)
@@ -462,12 +467,12 @@ def main(cfg : DictConfig) -> None:
             if "ImageNet" in cfg.data._target_ or "CUB" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_ or "Flowers102" in cfg.data._target_: # multi-class
                 in_class_pred = logits.argmax(dim=1)
                 in_confid = logits.softmax(dim=1).max(dim=1).values
-                in_confid_tgt =  logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+                in_confid_tgt =  logits.softmax(dim=1)[torch.arange(logits.size(0)), tgt_classes]
             else: # binary
                 in_class_pred = (logits >= 0).type(torch.int8)
                 in_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
                 in_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
-            print("in class_pred: ", in_class_pred.item(), in_confid.item())
+            print("in class_pred: ", in_class_pred, in_confid)
         
         init_image = image.clone() #image.repeat(n_samples_per_class, 1, 1, 1).to(device)
         sampler.init_images = init_image.to(device)
@@ -480,7 +485,11 @@ def main(cfg : DictConfig) -> None:
         init_latent = model.get_first_stage_encoding(
             model.encode_first_stage(_unmap_img(init_image)))  # move to latent space
         
-        if cfg.mode == "generate":
+        if "generate" in cfg.mode:
+            if cfg.mode == "generate_user_defined":
+                tgt_classes = torch.tensor([cfg.target_classes[cfg.data.batch_size*i+idx] for idx in range(tgt_classes.size(0))]).to(device)
+            elif cfg.mode == "generate_misclassifications":
+                tgt_classes = label
             for j, l in enumerate(label):
                 print(f"converting {i} from : {i2h[l.item()]} to: {i2h[int(tgt_classes[j].item())]}")
             prompts = create_prompts(
@@ -518,16 +527,16 @@ def main(cfg : DictConfig) -> None:
                 if "ImageNet" in cfg.data._target_ or "CUB" in cfg.data._target_ or "OxfordIIIPets" in cfg.data._target_ or "Flowers102" in cfg.data._target_: # multi-class
                     out_class_pred = logits.argmax(dim=1)
                     out_confid = logits.softmax(dim=1).max(dim=1).values
-                    out_confid_tgt = logits.softmax(dim=1)[torch.arange(batch_size), tgt_classes]
+                    out_confid_tgt = logits.softmax(dim=1)[torch.arange(logits.size(0)), tgt_classes]
                 else: # binary
                     out_class_pred = (logits >= 0).type(torch.int8)
                     out_confid = torch.where(logits >= 0, logits.sigmoid(), 1 - logits.sigmoid())
                     out_confid_tgt =  torch.where(tgt_classes.to(device) == 0, 1 - logits.sigmoid(), logits.sigmoid())
-                print("out class_pred: ", out_class_pred.item(), out_confid.item())
+                print("out class_pred: ", out_class_pred, out_confid)
                 print(out_confid_tgt)
 
             # Loop through your data and update the table incrementally
-            for j in range(batch_size):
+            for j in range(logits.size(0)):
                 # Generate data for the current row
                 src_image = copy.deepcopy(sampler.init_images[j].cpu()) #all_samples[j][0])
                 gen_image = copy.deepcopy(all_samples[0][j].cpu())
@@ -660,7 +669,7 @@ def main(cfg : DictConfig) -> None:
                 del out
 
             for j in range(orig_images.shape[0]):
-                lp_save_path = os.path.join(out_dir, f'{str(j).zfill(5)}.json')
+                lp_save_path = os.path.join(out_dir, f'{str(unique_data_idx[j].item()).zfill(5)}.json')
                 with open(lp_save_path, "w") as f:
                     json.dump(l1_errors[j], f, indent=2)
                 os.chmod(lp_save_path, 0o555)
@@ -746,7 +755,7 @@ def main(cfg : DictConfig) -> None:
                 del out
 
             for j in range(orig_images.shape[0]):
-                lp_save_path = os.path.join(out_dir, f'{str(j).zfill(5)}.json')
+                lp_save_path = os.path.join(out_dir, f'{str(unique_data_idx[j].item()).zfill(5)}.json')
                 with open(lp_save_path, "w") as f:
                     json.dump(l1_errors[j], f, indent=2)
                 os.chmod(lp_save_path, 0o555)

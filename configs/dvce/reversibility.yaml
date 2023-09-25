@@ -1,7 +1,7 @@
 resume: False
 checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
 record_intermediate: False
-output_dir: /misc/lmbraid21/faridk/evolution
+output_dir: /misc/lmbraid21/faridk/reversibility
 mode: reversibility
 
 diffusion_model:
