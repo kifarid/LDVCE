@@ -12,10 +12,10 @@ from utils.fig_utils import get_concat_h, get_concat_v
 #base_path = "/misc/lmbraid21/faridk/celeb/celeb_smile_new"
 #base_path = "/misc/lmbraid21/faridk/LDCE_w382_cc23"
 
-classifiers = ["inception_v3", "vit_b_32", "efficientnet_b7", "clip"] #, ""]
-base_path = "/misc/lmbraid21/faridk/LDCE_sd_correct_"
+classifiers = ["vit_b_32", "clip"] #, ""]
+base_path = "/misc/lmbraid21/faridk/LDCE_sd_more_"
 
-save_base_path = "/misc/lmbraid21/faridk/multi_classifiers_correct_cat"
+save_base_path = "/misc/lmbraid21/faridk/multi_classifiers_more_cat"
 os.makedirs(save_base_path, exist_ok=True)
 os.chmod(save_base_path, 0o777)
 save_path = os.path.join(save_base_path, "examples")

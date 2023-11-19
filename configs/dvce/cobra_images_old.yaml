@@ -1,0 +1,109 @@
+resume: False
+checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+record_intermediate: False
+output_dir: /misc/lmbraid21/schrodi/counterfactual/debug
+
+diffusion_model:
+  #cfg_path: "configs/latent-diffusion/cin256-v2.yaml"
+  #ckpt_path: "models/ldm/cin256-v2/model.ckpt" 
+  cfg_path: "configs/stable-diffusion/v1-inference.yaml"
+  ckpt_path: "/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt"
+
+seg_model:
+classifier_model:
+  name: "resnet50"
+  
+  
+
+
+n_samples_per_class: #2
+strength: 0.382 #0.322 #0.382 #0.34 #0.3 #28 #0.25
+scale: 3 #2.45 #2.85
+ddim_steps: 500 #500 #375 
+ddim_eta: 0.
+log_rate: 1
+seed: 0
+
+data:
+  _target_: data.datasets.ImageNetIndicies
+  root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+  idx_to_tgt_cls_path: 'data/image_idx_to_tgt_cobra_thunder.yaml'
+  image_idcs:
+    - 63
+    - 1063
+    - 2063
+    - 3063
+    - 4063
+    - 5063
+    - 6063
+    - 7063
+    - 8063
+    - 9063
+    - 10063
+    - 11063
+    - 12063
+    - 13063
+    - 14063
+    - 15063
+    - 16063
+    - 17063
+    - 18063
+    - 19063
+    - 20063
+    - 21063
+    - 22063
+    - 23063
+    - 24063
+    - 25063
+    - 26063
+    - 27063
+    - 28063
+    - 29063
+    - 30063
+    - 31063
+    - 32063
+    - 33063
+    - 34063
+    - 35063
+    - 36063
+    - 37063
+    - 38063
+    - 39063
+    - 40063
+    - 41063
+    - 42063
+    - 43063
+    - 44063
+    - 45063
+    - 46063
+    - 47063
+    - 48063
+    - 49063
+    
+  split: 'val'
+  return_tgt_cls: True
+  batch_size: 1
+  start_sample: 0
+  end_sample: 50
+  
+sampler:
+  self_recurrence: 0
+  self_recurrence_every_n_steps: 0
+  enforce_same_norms: True
+  guidance: "projected"
+  cone_projection_type: "zero_binning"
+  classifier_lambda: 3.95 #3.3
+  dist_lambda: 1.2
+  masked_guidance: False
+  backprop_diffusion: True   
+  lp_custom: 1
+  deg_cone_projection: 50.
+
+
+lmb_username: 'faridk'
+wandb:
+  entity: 'kifarid'
+  enabled: False
+  project: 'cdiff'
+  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+  run_id: debug

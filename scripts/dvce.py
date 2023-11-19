@@ -462,7 +462,13 @@ def main(cfg : DictConfig) -> None:
                         attr = "young"
                     else:
                         raise NotImplementedError
-                    prompts.append(f"a photo of a {attr} person")
+                    if 'smiling' in attr:
+                        prompt_form = f"A photograph of a celebrity, Face, High resolution, Face attributes: {'smiling' if attr =='smiling' else 'no smile, resting face'}"
+                        prompts.append(prompt_form)
+                    else:
+                        prompt_form = f"A photograph of a celebrity {'Age:18-30 years' if attr == 'old' else 'Age:old'} , face, high resolution"
+                        #prompt_form = f"A photograph portrait of a celebrity, {'age:old' if attr =='old' else 'age:young'}, face, high resolution"
+                        prompts.append(prompt_form)
             elif "CUB" in cfg.data._target_:
                 # prompts following https://github.com/openai/CLIP/blob/main/data/prompts.md
                 prompts = [f"a photo of a {i2h[target.item()]}, a type of bird." for target in tgt_classes]

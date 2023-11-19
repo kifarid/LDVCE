@@ -22,3 +22,6 @@ src/clipseg
 tench_eaten.png
 .gitignore
 scripts/testing_thedataset.py
+src/clip
+src/clipseg
+src/taming-transformers

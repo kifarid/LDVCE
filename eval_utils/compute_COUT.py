@@ -340,9 +340,9 @@ def compute_cout(args):
 
 def arguments():
     parser = argparse.ArgumentParser(description='COUT arguments.')
-    parser.add_argument('--output-path', required=True, type=str,
+    parser.add_argument('--output-path', default='/misc/lmbraid21/faridk/LDCE_w382_cc23_clsg', type=str,
                         help='Results Path')
-    parser.add_argument('--dataset', required=True, type=str,
+    parser.add_argument('--dataset', default="ImageNet", type=str,
                         choices=["CelebAHQ", "ImageNet"],
                         help='Dataset to evaluate')
     parser.add_argument('--query-label', required=True, type=int)
