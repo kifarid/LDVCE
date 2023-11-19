@@ -1,10 +1,12 @@
 #!/bin/bash
 #PBS -N celeb_age
 #PBS -S /bin/bash
-#PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00 #
+#PBS -l nodes=1:ppn=8:gpus=1:nvidiaRTX3090,mem=15gb,walltime=24:00:00 # 
 #PBS -M faridk@informatik.uni-freiburg.de
+#PBS -o logs/
 #PBS -j oe
 #PBS -q default-cpu
+#PBS -t 0
 
 ulimit -n 8192
 echo "changed the ulimit to 8192"
@@ -24,7 +26,7 @@ strength_list=(0.32 0.36 0.38 0.4 0.43 0.46 0.48)
 # ddim_steps=(500 500 500)
 
 ddim_steps=500
-strength={strength_list[$PBS_ARRAYID]}
+strength=${strength_list[$PBS_ARRAYID]}
 #strength=$(echo "scale=3; 0$strength" | bc)
 
 # Get the index corresponding to $PBS_ARRAYID

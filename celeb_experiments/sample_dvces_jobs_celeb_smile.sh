@@ -20,11 +20,12 @@ echo generating for $PBS_ARRAYID to $((PBS_ARRAYID+1))
 
 export TRANSFORMERS_CACHE='/misc/lmbraid21/faridk/.cache/huggingface/hub'
 export TORCH_HOME='/misc/lmbraid21/faridk/.cache/torch/'
+
 strength_list=(0.32 0.36 0.38 0.4 0.43 0.46 0.48)
 # ddim_steps=(500 500 500)
 
 ddim_steps=500
-strength={strength_list[$PBS_ARRAYID]}
+strength=${strength_list[$PBS_ARRAYID]}
 #strength=$(echo "scale=3; 0$strength" | bc)
 
 # Get the index corresponding to $PBS_ARRAYID
