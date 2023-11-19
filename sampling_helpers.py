@@ -355,7 +355,8 @@ def generate_samples(
         ddim_eta=0., 
         latent_t_0=True, 
         prompts: list = None,
-        seed: int = 0
+        seed: int = 0,
+        return_counterfactual_latents: bool = False,
 ):
     torch.cuda.empty_cache()
     
@@ -364,6 +365,7 @@ def generate_samples(
     all_videos = []
     all_masks = []
     all_cgs = []
+    all_latent_samples = []
 
     with torch.no_grad():
         with model.ema_scope():
@@ -447,6 +449,8 @@ def generate_samples(
             all_videos.append(vid) if ccdddim and vid is not None else None
             all_masks.append(mask) if ccdddim and mask is not None else None
             all_cgs.append(cg) if ccdddim and cg is not None else None
+            if return_counterfactual_latents:
+                all_latent_samples.append(samples)
         tac = time.time()
 
     out = {}
@@ -455,6 +459,8 @@ def generate_samples(
     out["videos"] = all_videos if len(all_videos) > 0 else None
     out["masks"] = all_masks if len(all_masks) > 0 else None
     out["cgs"] = all_cgs if len(all_cgs) > 0 else None
+    if return_counterfactual_latents:
+        out["latents"] = all_latent_samples
     
     return out
 

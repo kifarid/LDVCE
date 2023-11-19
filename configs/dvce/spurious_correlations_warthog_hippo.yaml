@@ -1,0 +1,161 @@
+resume: False
+checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+record_intermediate: False
+output_dir: /misc/lmbraid21/faridk/spurious_correlations/warthog_hippo
+mode: generate_user_defined
+
+diffusion_model:
+  cfg_path: "configs/stable-diffusion/v1-inference.yaml"
+  ckpt_path: "/misc/lmbraid21/schrodi/pretrained_models/sd-v1-4-256.ckpt" # miniSD https://huggingface.co/justinpinkney/miniSD/tree/main
+
+seg_model:
+classifier_model:
+  name: "resnet50"
+  ckpt: "/misc/student/faridk/DVCEs/ImageNet1000Models/Madry_l2_improved/checkpoint/ep_3.pt"
+  classifier_wrapper: True
+
+
+n_samples_per_class: #2
+strength: 0.382 #0.322 #0.382 #0.34 #0.3 #28 #0.25
+scale: 3 #2.45 #2.85
+ddim_steps: 500 #500 #375 
+ddim_eta: 0.
+log_rate: 1
+seed: 0
+
+data:
+  _target_: data.datasets.ImageNetIndicies
+  root: '/misc/scratchSSD2/datasets/ILSVRC2012/val'
+  idx_to_tgt_cls_path: 'data/image_idx_to_tgt.yaml'
+  image_idcs:
+    - 343
+    - 1343
+    - 2343
+    - 3343
+    - 4343
+    - 5343
+    - 6343
+    - 7343
+    - 8343
+    - 9343
+    - 10343
+    - 11343
+    - 12343
+    - 13343
+    - 14343
+    - 15343
+    - 16343
+    - 17343
+    - 18343
+    - 19343
+    - 20343
+    - 21343
+    - 22343
+    - 23343
+    - 24343
+    - 25343
+    - 26343
+    - 27343
+    - 28343
+    - 29343
+    - 30343
+    - 31343
+    - 32343
+    - 33343
+    - 34343
+    - 35343
+    - 36343
+    - 37343
+    - 38343
+    - 39343
+    - 40343
+    - 41343
+    - 42343
+    - 43343
+    - 44343
+    - 45343
+    - 46343
+    - 47343
+    - 48343
+    - 49343
+
+  split: 'val'
+  return_tgt_cls: True
+  batch_size: 4
+  start_sample: 0
+  end_sample: 50
+
+target_classes:
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+    - 344
+
+sampler:
+  self_recurrence: 0
+  self_recurrence_every_n_steps: 0
+  enforce_same_norms: True
+  guidance: "projected"
+  cone_projection_type: "zero_binning"
+  classifier_lambda: 3.95 #3.3
+  dist_lambda: 1.2
+  masked_guidance: False
+  backprop_diffusion: True   
+  lp_custom: 1
+  deg_cone_projection: 50.
+
+
+lmb_username: 'schrodi'
+
+wandb:
+  entity: 'kifarid'
+  enabled: False
+  project: 'cdiff'
+  checkpoint_path: '/misc/lmbraid21/${lmb_username}/counterfactuals/checkpoints/${wandb.project}_${wandb.run_id}_${data.start_sample}_${data.end_sample}.tar'
+  run_id: debug
