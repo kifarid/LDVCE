@@ -25,22 +25,26 @@ export TORCH_HOME='/misc/lmbraid21/faridk/.cache/torch/'
 
 ddim_steps=500
 strength=0.4 #0.4 #${strength_list[$PBS_ARRAYID]}
+deg_cone_projection=90.
+classifier_lambda=4.0
+dist_lambda=3.3
+query_label=39
 #strength=$(echo "scale=3; 0$strength" | bc)
 # Get the index corresponding to $PBS_ARRAYID
 echo "Selected strength: $strength"
 
 python -m scripts.dvce --config-name=v8_celebAHQ \
     data.batch_size=1 \
-    data.query_label=39 \
-    sampler.classifier_lambda=4.0 \
-    sampler.dist_lambda=3.3 \
+    data.query_label=${query_label} \
+    sampler.classifier_lambda=${classifier_lambda} \
+    sampler.dist_lambda=${dist_lambda} \
     data.num_shards=7 \
-    strength=$strength \
-    sampler.deg_cone_projection=55. \
+    strength=${strength} \
+    sampler.deg_cone_projection=${deg_cone_projection} \
     data.shard=${PBS_ARRAYID} \
     ddim_steps=${ddim_steps} \
-    output_dir=/misc/lmbraid21/faridk/celeb_age_corrected_np_4_33_40_55 \
-    strength=$strength > logs/celeb_age_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
+    output_dir=/misc/lmbraid21/faridk/celeb_age_op_${strength}_${classifier_lambda}_${dist_lambda}_${deg_cone_projection} \
+    strength=$strength > logs/celeb_age_op_${strength}_${classifier_lambda}_${dist_lambda}_${deg_cone_projection}_$PBS_ARRAYID.log   #${ddim_steps[$PBS_ARRAYID]} \
 
 # python -m scripts.dvce --config-name=v8_celebAHQ \
 #     data.batch_size=1 \

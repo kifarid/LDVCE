@@ -9,7 +9,7 @@
 
 export MODEL_NAME="runwayml/stable-diffusion-v1-5"
 export HF_HOME='/misc/lmbraid21/faridk/.cache/huggingface/'
-export OUTPUT_DIR="/misc/lmbraid21/faridk/lora_finetune_2"
+export OUTPUT_DIR="/misc/lmbraid21/faridk/lora_finetune_karim"
 export DATASET_DIR='/misc/lmbraid21/faridk/CelebAMask-HQ_lora/'
 
 source /misc/student/faridk/miniconda3/bin/activate lora
@@ -27,12 +27,12 @@ accelerate launch --mixed_precision="fp16"  train_text_to_image_lora.py \
   --train_batch_size=2 \
   --gradient_accumulation_steps=4 \
   --max_train_steps=15000 \
-  --learning_rate=9e-05 \
+  --learning_rate=1e-04 \
   --max_grad_norm=1 \
   --lr_scheduler="cosine" --lr_warmup_steps=0 \
   --output_dir=${OUTPUT_DIR} \
   --report_to=wandb \
   --enable_xformers_memory_efficient_attention \
   --checkpointing_steps=500 \
-  --validation_prompt="A photo of a smiling celebrity, high-quality, 1024x1024" \
+  --validation_prompt="A photograph of a celebrity Age:old, Face, Face attributes: no smile, resting face, High resolution" \
   --seed=42

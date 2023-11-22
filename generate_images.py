@@ -42,12 +42,18 @@ pipe = pipe.to("cuda")
 #     image = pipe(probably_bad_prompt).images[0]
 #     image.save(f"{probably_bad_prompt}_{i}.png")
 
+# for i in range(10):
+#     probably_bad_prompt = "A photograph of a celebrity, Face, High resolution, Face attributes: smiling"
+#     image = pipe(probably_bad_prompt).images[0]
+#     image.save(f"{probably_bad_prompt}_{i}.png")
+
+# for i in range(10):
+#     probably_bad_prompt = "A photograph of a celebrity, Face, High resolution, Face attributes: no smile, resting face"
+#     image = pipe(probably_bad_prompt).images[0]
+#     image.save(f"{probably_bad_prompt}_{i}.png")
+
 for i in range(10):
-    probably_bad_prompt = "A photograph of a celebrity, Face, High resolution, Face attributes: smiling"
+    probably_bad_prompt = "A photograph of a celebrity, Face Attributes:smiling, Face, High resolution"
     image = pipe(probably_bad_prompt).images[0]
     image.save(f"{probably_bad_prompt}_{i}.png")
 
-for i in range(10):
-    probably_bad_prompt = "A photograph of a celebrity, Face, High resolution, Face attributes: no smile, resting face"
-    image = pipe(probably_bad_prompt).images[0]
-    image.save(f"{probably_bad_prompt}_{i}.png")

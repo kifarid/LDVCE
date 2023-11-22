@@ -25,3 +25,6 @@ scripts/testing_thedataset.py
 src/clip
 src/clipseg
 src/taming-transformers
+celeb_results_hpo.csv
+sd_celeb_lora.ckpt
+lora_finetune_simon_2_fused/

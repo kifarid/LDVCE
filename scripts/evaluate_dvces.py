@@ -31,10 +31,10 @@ def create_df(data_dir):
     # Loop through the files in the data directory
     for bucket in sorted(os.listdir(data_dir)):
         if os.path.isdir(os.path.join(data_dir, bucket)):
-            print("logging bucket: ", bucket, " to wandb ...")
+            print("evaluating bucket: ", bucket)
             for i, filename in enumerate(sorted(os.listdir(os.path.join(data_dir, bucket)))):
                 if filename.endswith(".pth")  and filename.split('.')[0].isdigit():
-                    print("logging file: ", filename, " to wandb ...")
+                    #print("logging file: ", filename, " to wandb ...")
                     # Load the data from the file
                     data = torch.load(os.path.join(data_dir, bucket, filename))
 

@@ -39,8 +39,17 @@ def copy_to_target(data_dir, target_dir):
             os.makedirs(os.path.join(target_dir, bucket, 'counterfactual'), exist_ok=True)
             print("copying the bucket: ", bucket, " to target directory ...")
             count_files_flipped = 0
+            
+
             for i, filename in tqdm(enumerate(sorted(os.listdir(os.path.join(data_dir, bucket))))):
-        
+                if filename.endswith(".yaml") or filename.endswith(".yml"):
+                    #copy config file to the target directory
+                    if not os.path.exists(os.path.join(target_dir, bucket, filename)):
+                        shutil.copy(os.path.join(data_dir, bucket, filename), os.path.join(target_dir, bucket, filename))
+                    else:
+                        os.remove(os.path.join(target_dir, bucket, filename))
+                        shutil.copy(os.path.join(data_dir, bucket, filename), os.path.join(target_dir, bucket, filename))
+                        
                 if filename.endswith(".pth")  and filename.split('.')[0].isdigit():
                     # Load the data from the file
                     data = torch.load(os.path.join(data_dir, bucket, filename))
@@ -90,7 +99,7 @@ def copy_to_target(data_dir, target_dir):
 if __name__ == "__main__":
     # Add command line arguments for data directory and table name
     parser = argparse.ArgumentParser(description='Process data directory and table name')
-    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/celeb_age_corrected_8/', help='path to data directory') #np_4_33_40_55
+    parser.add_argument('--data-dir', type=str, default='/misc/lmbraid21/faridk/celeb_smile_corrected_8/', help='path to data directory') #np_4_33_40_55
 
     args = parser.parse_args()
     #change the name of the final directory and add to it _flipped

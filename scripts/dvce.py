@@ -250,7 +250,7 @@ def create_prompts(cfg, tgt_classes, i2h, is_text: bool) -> list:
                     prompt_form = f"A photograph of a celebrity, Face, High resolution, Face attributes: {'smiling' if attr =='smiling' else 'no smile, resting face'}"
                     prompts.append(prompt_form)
                 else:
-                    prompt_form = f"A photograph of a celebrity {'Age:18-30 years' if attr == 'old' else 'Age:old'} , face, high resolution"
+                    prompt_form = f"A photograph of a celebrity {'Age:18-30 years' if attr == 'young' else 'Age:old'} , face, high resolution"
                     #prompt_form = f"A photograph portrait of a celebrity, {'age:old' if attr =='old' else 'age:young'}, face, high resolution"
                     prompts.append(prompt_form)
 

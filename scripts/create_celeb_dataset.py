@@ -39,57 +39,21 @@ def generate_prompt(row):
         'Wearing_Necklace', 'Wearing_Necktie', 'Young']
 
     """
-    
-    # Adjectives    
-    all_adjectives = ['Attractive', 'Bald', "Male", "Young", "Smiling"]
 
-    # Gender
-    #get gender from row
-    gender = "male" if row['Male'] == 1 else "female"
-    smiling = "smiling" if row['Smiling'] == 1 else "non-smiling"
-
-    #Age
-    age = "young" if row['Young'] == 1 else "old"
-
-    # Features
-    adjectives = []
-    
     # Age or Smiling (3/8 for age, 3/8 for smiling, 1/4 for both)
     age_smiling_choice = np.random.choice(np.array(['age', 'smiling', 'both']), p=[3/8, 3/8, 1/4])
+    age_prompt = 'Age:18-30' if row['Young'] == 1 else 'Age:old'
+    smiling_prompt = 'Face attributes: smiling' if row['Smiling'] == 1 else 'Face attributes: no smile, resting face'
     
     if age_smiling_choice == 'age':
-        adjectives.append(age)
+        prompt_form = f"A photograph of a celebrity {age_prompt}, Face, High resolution"
     elif age_smiling_choice == 'smiling':
-        adjectives.append(smiling)
+        prompt_form = f"A photograph of a celebrity, Face, {smiling_prompt}, High resolution"
     else:
-        adjectives.extend([age, smiling])
-    
-    # add gender to adjectives 20% of the time
-    adjectives.append(gender) if random.random() > 0.9 else None
+        prompt_form = f"A photograph of a celebrity {age_prompt}, Face, {smiling_prompt}, High resolution"
+  
 
-
-
-    #available_features_row = row[row == 1]
-    
-    #available_adjectives_row = available_features_row[~available_features_row.index.isin(features)]
-    available_features = row[row == 1].index.tolist()
-    #filter out the features already used
-    available_features = [feature for feature in available_features if feature not in all_adjectives]
-    #filter out features with "wearing" in the name
-    available_features = [feature for feature in available_features if "Wearing" not in feature]
-    #add each to adjective with change 85% of adding each feature
-    features = []
-    for feature in available_features:
-        if random.random() > 0.9:
-            features.append(feature.replace("_", " ").lower())
-
-    # Construct the prompt
-    prompt = f"A photo of a {' , '.join(adjectives)} celebrity"
-    if len(features) > 0:
-        prompt += f" with {' and '.join(features)}"
-
-
-    return prompt
+    return prompt_form
 
 df['text'] = df.apply(generate_prompt, axis=1)
 df = df[['image', 'text']]
@@ -107,4 +71,4 @@ for i in range(len(df)):
     #copy without permissions
     shutil.copyfile(image_path, new_image_path, follow_symlinks=False)
 
-df.to_csv(new_dir + "/meta_data.csv", index=False)
+df.to_csv(new_dir + "/meta_data_new.csv", index=False)
