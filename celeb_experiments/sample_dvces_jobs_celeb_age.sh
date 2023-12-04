@@ -32,8 +32,9 @@ strength=${strength_list[$PBS_ARRAYID]}
 # Get the index corresponding to $PBS_ARRAYID
 echo "Selected strength: $strength"
 
-python -m scripts.dvce --config-name=v8_celebAHQ_lora \
-    data.batch_size=1 \
+python -m scripts.dvce --config-name=v8_celebAHQ \
+
+    data.batch_size=4 \
     data.query_label=39 \
     sampler.classifier_lambda=3.95 \
     sampler.dist_lambda=2.85 \

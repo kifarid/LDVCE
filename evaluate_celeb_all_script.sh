@@ -35,3 +35,4 @@ for result_path in $base_result_path/celeb_smile_np_*; do
     python eval_utils/evaluate_celeb_all.py --path $result_path --target_csv ./results/celebA/hp_evals.csv \
         --query_label 31
 done
+

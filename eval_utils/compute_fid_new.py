@@ -1,5 +1,6 @@
 import argparse
 import glob
+import pandas as pd
 import shutil
 import os
 os.environ['TRANSFORMERS_CACHE'] = '/misc/lmbraid21/faridk/.cache/huggingface/hub'
@@ -11,7 +12,7 @@ import torch
 from tqdm import tqdm
 
 
-def compute_fid(args):
+def compute_fmetrics(args):
     if not args.sfid: # FID computation
         real_images_path = os.path.join(args.output_path, "all_originals")
         os.makedirs(real_images_path, mode=777, exist_ok=True)
@@ -69,13 +70,23 @@ def compute_fid(args):
 
         output = subprocess.check_output(cmd, universal_newlines=True)
         #convert output to float
-        fid = float(output.split()[-1])
+        metrics = {'fd': '0', 'precision': '0', 'recall': '0', 'coverage': '0', 'density': '0'}
+        for line in output.split('\n'):
+            parts = line.split(':')
+            if len(parts) != 2:
+                continue
+            metric, value = parts[0].strip(), parts[1].strip()
+            if metric in metrics:
+                metrics[metric] = float(value)
+
+        #fid = float(output.split()[-1])
         shutil.rmtree(real_images_path)
         shutil.rmtree(counterfactual_images_path)
-        return fid
+        return metrics
     
     elif args.sfid: # sFID computation
-        sfids = []
+        #sfids = []
+        metrics = {'fd': [], 'precision': [], 'recall': [], 'coverage': [], 'density': []}
         def checkNatNum(n):
             if str(n).isdigit() and float(n) == int(n) and int(n) > 0:
                 return True
@@ -120,6 +131,7 @@ def compute_fid(args):
                     split1["counterfactual"].append(os.path.join(dirname, "counterfactual", filename))
                     split2["original"].append(os.path.join(dirname, "original", filename))
 
+            metrics = {'fd': [], 'precision': [], 'recall': [], 'coverage': [], 'density': []}
             for split in [split1, split2]:
                 real_images_path = os.path.join(args.output_path, "all_originals")
                 os.makedirs(real_images_path, mode=777, exist_ok=True)
@@ -148,10 +160,22 @@ def compute_fid(args):
                     "--batch_size", "256",
                     #"--arch", "vitb16",
                     "--metrics", "prdc", "fd",]
+                
+
+
                 output = subprocess.check_output(cmd, universal_newlines=True)
                 #convert output to float
-                sfid = float(output.split()[-1])
-                sfids.append(sfid)
+                for line in output.split('\n'):
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        continue
+                    metric, value = parts[0].strip(), parts[1].strip()
+                    if metric in metrics:
+                        metrics[metric].append(float(value))
+
+                
+                #sfid = float(output.split()[-1])
+                #sfids.append(sfid)
 
                 shutil.rmtree(real_images_path)
                 shutil.rmtree(counterfactual_images_path)
@@ -202,9 +226,13 @@ def compute_fid(args):
                     "--metrics", "prdc", "fd",]
                 
                 output = subprocess.check_output(cmd, universal_newlines=True)
-                #convert output to float
-                sfid = float(output.split()[-1])
-                sfids.append(sfid)
+                for line in output.split('\n'):
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        continue
+                    metric, value = parts[0].strip(), parts[1].strip()
+                    if metric in metrics:
+                        metrics[metric].append(float(value))
 
                 shutil.rmtree(real_images_path)
                 shutil.rmtree(counterfactual_images_path)
@@ -246,29 +274,57 @@ def compute_fid(args):
                     "--metrics", "prdc", "fd",]
                 output = subprocess.check_output(cmd, universal_newlines=True)
                 #convert output to float
-                sfid = float(output.split()[-1])
-                sfids.append(sfid)
+                for line in output.split('\n'):
+                    parts = line.split(':')
+                    if len(parts) != 2:
+                        continue
+                    metric, value = parts[0].strip(), parts[1].strip()
+                    if metric in metrics:
+                        metrics[metric].append(float(value))
 
                 shutil.rmtree(real_images_path)
                 shutil.rmtree(counterfactual_images_path)
 
-        #get the mean
-        sfid = np.mean(sfids)
-        return sfid
+        #get the mean of the metrics
+        sMetrics = {k: np.mean(v) for k, v in metrics.items()}        #sfid = np.mean(sfids)
+        print(sMetrics)
+        return sMetrics
 
     else:
         raise NotImplementedError
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output-path', type=str, default='/misc/lmbraid21/faridk/ImageNetSVCEs_robustOnly/', help='the path of the experiment')
+    parser.add_argument('--output-path', type=str, default='/misc/lmbraid21/faridk/celeb_age_corrected_8', help='the path of the experiment')
     parser.add_argument('--sfid', action="store_true")
+    parser.add_argument('--target_csv', type=str, default='results/celeb_fmetrics.csv')
+    parser.add_argument('--class_balanced', type=bool, default=False)
     parser.add_argument('--drop_mismatch', action="store_true",help='drop mismatched pairs')
     parser.add_argument('--sfid_splits', type=int, default=2)
     parser.add_argument('--limit_length', type=int, default=10000)
     args=parser.parse_args()
     #whether we would drop mismatched pairs or not
     print('args.drop_mismatch', args.drop_mismatch)
-    fid = compute_fid(args)
+    metrics = compute_fmetrics(args)
     
-    print("sFID:" if args.sfid else "FID:", fid)
+    metrics['split_sfid'] = args.sfid
+    print(metrics)
+    #append directory name to the metrics
+    metrics['output_path'] = args.output_path
+    target_csv = args.target_csv
+    #append the results to the csv file if it exists or create a new one if it does not exist
+    if os.path.exists(target_csv):
+        df = pd.read_csv(target_csv)
+        df = pd.concat([df, pd.DataFrame([metrics])], ignore_index=True)
+        df.to_csv(target_csv, index=False)
+        print("results appended to: ",target_csv)
+    else:
+        print("creating new csv file: ", target_csv)
+        print(metrics)
+
+        df = pd.DataFrame([metrics])
+        df.to_csv(target_csv, index=False)
+        print("results saved to: ", target_csv)
+    
+    
+        

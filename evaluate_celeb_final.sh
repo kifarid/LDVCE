@@ -1,7 +1,7 @@
 #!/bin/bash
 #PBS -N eval_celeb
 #PBS -S /bin/bash
-#PBS -l nodes=1:ppn=8:gpus=1,mem=15gb,walltime=3:00:00
+#PBS -l nodes=1:ppn=8:gpus=2,mem=16gb,walltime=3:00:00
 #PBS -o logs/
 #PBS -M faridk@informatik.uni-freiburg.de
 #PBS -j oe
@@ -29,7 +29,9 @@ python eval_utils/evaluate_celeb_all.py --path ${base_result_path}/age_032_425_3
      --query_label 39
 
 #python eval_utils/evaluate_celeb_all.py --path ${base_result_path}/smile_032_425_345 --target_csv ./results/celebA/hp_evals_smile.csv \
-#    --query_label 31
+#  --query_label 31
+
+
 
 # for result_path in $base_result_path/celeb_smile_np_*; do
 #     echo "Processing $result_path"

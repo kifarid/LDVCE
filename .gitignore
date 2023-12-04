@@ -28,3 +28,9 @@ src/taming-transformers
 celeb_results_hpo.csv
 sd_celeb_lora.ckpt
 lora_finetune_simon_2_fused/
+
+smile/
+lora_examples_sdopf/
+lora_finetune_simon_2_fused/
+lora_msd_opn_fused/
+lora_sdopf_ope_fused/
